@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="modern" data-sound="true">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMA Report Dashboard</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Theme and Sound Toggle -->
+    <div class="toolbar">
+        <div class="theme-selector">
+            <label for="theme">Theme: </label>
+            <select id="theme">
+                <option value="modern">Modern</option>
+                <option value="classic">Classic</option>
+                <option value="retro">Retro</option>
+            </select>
+        </div>
+        <div class="sound-toggle">
+            <label>
+                <input type="checkbox" id="sound-toggle" checked>
+                Sound Effects
+            </label>
+        </div>
+    </div>
+
+    <!-- Header with Humor -->
+    <header>
+        <h1>🔍 CMA Code Metrics Analyzer</h1>
+        <p id="loading-message">Loading your code's personality report...</p>
+        <div id="easter-egg-hint" title="Try the Konami code: ↑↑↓↓←→←→BA">💡 Hint: Konami code unlocks secrets</div>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        <!-- Loading State -->
+        <div id="loading-state">
+            <div class="spinner"></div>
+            <div id="while-you-wait">
+                <h3>While you wait...</h3>
+                <div id="mini-game-container">
+                    <!-- Typing speed test will be injected here -->
+                </div>
+                <div id="dev-fact">
+                    <!-- Random developer fact will be injected here -->
+                be injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Report Content (hidden until data loads) -->
+        <section id="report-content" class="hidden">
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="overview">Overview</button>
+                <button class="tab-btn" data-tab="hotspots">Hotspots</button>
+                <button class="tab-btn" data-tab="violations">Violations</button>
+                <button class="tab-btn" data-tab="dependencies">Dependencies</button>
+                <button class="tab-btn" data-tab="files">Files</button>
+            </div>
+
+            <!-- Tab Panels -->
+            <div class="tab-panel active" id="overview-panel">
+                <div class="health-score-container">
+                    <div class="health-score-gauge">
+                        <div class="gauge-fill"></div>
