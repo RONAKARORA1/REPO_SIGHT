@@ -5,10 +5,7 @@
   "functions": {
     "backend/api/**/*.js": {
       "runtime": "nodejs20.x",
-      "maxDuration": 900          // 15 minutes for analysis
-    },
-    "backend/api/scan/analyze/route.ts": {
-      "maxDuration": 900          // Explicitly set for the analysis worker
+      "maxDuration": 900
     }
   },
   "rewrites": [
