@@ -4,8 +4,10 @@
   "outputDirectory": "frontend",
   "functions": {
     "backend/api/**/*.js": {
-      "runtime": "nodejs20.x",
-      "maxDuration":250
+      "runtime": "nodejs20.x"
+    },
+    "backend/api/scan/analyze/route.ts": {
+      "maxDuration": 900
     }
   },
   "rewrites": [
