@@ -1,0 +1,13 @@
+{
+  "name": "repo-sight-vercel",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:analyzer": "mkdir -p backend/bin && cd analyzer && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j$(nproc) && strip cma && cp cma ../../backend/bin/linux-x64-cma",
+    "install:backend": "cd backend && npm install"
+  },
+  "dependencies": {
+    // Backend dependencies will be installed by `install:backend` (see below)
+  },
+  "devDependencies": {}
+}
