@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",                     // Match Vercel's Node.js runtime
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "outDir": "./dist",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "sourceMap": true,
+    "removeComments": false,
+    "noEmitOnError": true
+  },
+  "include": [
+    "api/**/*.ts",
+    "lib/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}
