@@ -1,4 +1,5 @@
-backend/bin/
-    web/
-    node_modules/
-    analyzer/build/
+backend/bin/*
+!backend/bin/linux-x64-cma
+web/
+node_modules/
+analyser/build/

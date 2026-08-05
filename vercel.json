@@ -1,5 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build:analyzer",
-  "outputDirectory": "frontend"
+  "buildCommand": "npm run build",
+  "outputDirectory": "frontend",
+  "functions": {
+    "backend/api/**/*.ts": {
+      "includeFiles": [
+        "backend/bin/linux-x64-cma"
+      ]
+    }
+  }
 }
