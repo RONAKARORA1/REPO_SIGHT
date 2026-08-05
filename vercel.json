@@ -3,9 +3,6 @@
   "buildCommand": "npm run build:analyzer",
   "outputDirectory": "frontend",
   "functions": {
-    "backend/api/**/*.js": {
-      "runtime": "nodejs20.x"
-    },
     "backend/api/scan/analyze/route.ts": {
       "maxDuration": 900
     }
