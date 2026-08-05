@@ -1,20 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build:analyzer",
-  "outputDirectory": "frontend",
-  "functions": {
-    "backend/api/scan/analyze/route.ts": {
-      "maxDuration": 900
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/backend/api/$1"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ]
+  "outputDirectory": "frontend"
 }
