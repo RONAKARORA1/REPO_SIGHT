@@ -4,9 +4,7 @@
   "outputDirectory": "frontend",
   "functions": {
     "backend/api/**/*.ts": {
-      "includeFiles": [
-        "backend/bin/linux-x64-cma"
-      ]
+      "includeFiles": "backend/bin/linux-x64-cma"
     }
   }
 }
