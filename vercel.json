@@ -8,7 +8,7 @@
     },
     "frontend/app/api/scans/[scanId]/analyze/route.ts": {
       "runtime": "nodejs20.x",
-      "maxDuration": 900
+      "maxDuration": 250
     }
   },
   "rewrites": [
