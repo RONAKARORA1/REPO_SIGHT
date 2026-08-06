@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "cd backend && npm install",
-    "install:backend": "cd backend && npm install"
+    "build:analyzer": "apt-get update && apt-get install -y cmake make && mkdir -p frontend/backend/bin && cd analyzer && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j && strip cma && cp cma ../../frontend/backend/bin/linux-x64-cma",
+    "install": "npm install"
   },
   "dependencies": {},
   "devDependencies": {}
