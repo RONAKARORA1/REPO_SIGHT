@@ -10,7 +10,7 @@
     /* The heavy‑weight analysis worker – Background Function */
     "frontend/app/api/scans/[scanId]/analyze/route.ts": {
       "runtime": "nodejs20.x",
-      "maxDuration": 900          // 15 minutes
+      "maxDuration": 250          // 15 seconds × 60 = 15 minutes
     }
   },
   "rewrites": [
