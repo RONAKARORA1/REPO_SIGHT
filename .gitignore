@@ -3,3 +3,5 @@ backend/bin/*
 web/
 node_modules/
 analyser/build/
+node
+node
