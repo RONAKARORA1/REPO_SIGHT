@@ -1,7 +1,7 @@
-backend/bin/*
-!backend/bin/linux-x64-cma
+# Ignore stray Node.js binary that appeared while testing jsonlint
+node
+# Existing ignore patterns (keep them)
+backend/bin/
 web/
 node_modules/
-analyser/build/
-node
-node
+analyzer/build/
