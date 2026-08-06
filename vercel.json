@@ -1,10 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build:analyzer",
   "outputDirectory": "frontend",
   "functions": {
-    "backend/api/**/*.ts": {
-      "includeFiles": "backend/bin/linux-x64-cma"
+    "frontend/app/api/**/*.js": {
+      "runtime": "nodejs20.x"
+    },
+    "frontend/app/api/scans/[scanId]/analyze/route.ts": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 900
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/frontend/app/api/$1" },
+    { "source": "/(.*)", "destination": "/frontend/app/page.tsx" }
+  ]
 }
