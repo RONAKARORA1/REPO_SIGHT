@@ -3,12 +3,14 @@
   "buildCommand": "npm run build:analyzer",
   "outputDirectory": "frontend",
   "functions": {
+    /* All API routes – Serverless Functions */
     "frontend/app/api/**/*.js": {
       "runtime": "nodejs20.x"
     },
+    /* The heavy‑weight analysis worker – Background Function */
     "frontend/app/api/scans/[scanId]/analyze/route.ts": {
       "runtime": "nodejs20.x",
-      "maxDuration": 250
+      "maxDuration": 900          // 15 minutes
     }
   },
   "rewrites": [
