@@ -18,4 +18,3 @@
     { "source": "/(.*)", "destination": "/frontend/app/page.tsx" }
   ]
 }
-300
