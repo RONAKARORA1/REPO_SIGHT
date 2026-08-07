@@ -1,24 +1,21 @@
 // frontend/app/api/scans/[scanId]/analyze/route.ts
 import { exec } from 'child_process';
 import { join } from 'path';
-import { mkdir, writeFile, readFile, readdir, stat } from 'fs/promises';
+import { mkdir, writeFile, readFile, readdir } from 'fs/promises';
 import { sql } from '@/lib/db';
-import { uploadBlob, fetchBlob, deleteBlob } from '@/lib/storage';
+import { uploadBlob, fetchBlob } from '@/lib/storage';
 import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 
 // -------------------------------------------------------------------
 // CONFIG
 // -------------------------------------------------------------------
-export const config = { maxDuration: 300 }; // Hobby‑safe limit (5 min)
+export const config = { maxDuration: 300 }; // Hobby‑safe (5 min)
 
 // -------------------------------------------------------------------
 // HELPERS
 // -------------------------------------------------------------------
 async function ensureDir(dir: string) { await mkdir(dir, { recursive: true }); }
-async function rmrf(dir: string) {
-  try { await import('fs/promises').then(f => f.rm(dir, { recursive: true, force: true })); } catch {}
-}
 async function readJson<T>(path: string): Promise<T> {
   const buf = await readFile(path, 'utf8');
   return JSON.parse(buf) as T;
@@ -51,7 +48,7 @@ export const POST = async (req: Request): Promise<NextResponse> => {
     }
     const scan = scanRes.rows[0];
 
-    // If already finished, just return current state
+    // Already finished → just return current state
     if (scan.status === 'COMPLETED' || scan.status === 'FAILED') {
       return NextResponse.json({
         status: scan.status,
@@ -60,7 +57,7 @@ export const POST = async (req: Request): Promise<NextResponse> => {
       });
     }
 
-    // 2������ Mark as PROCESSING (if not already)
+    // Mark as PROCESSING if we are still QUEUED
     if (scan.status === 'QUEUED') {
       await sql`
         UPDATE scans
@@ -70,28 +67,27 @@ export const POST = async (req: Request): Promise<NextResponse> => {
       `;
     }
 
-    // 3������ Prepare a temporary workspace for this invocation
+    // 2������ Prepare a temporary workspace
     const workDir = join('/tmp', `scan-${scanId}-${Date.now()}`);
     await ensureDir(workDir);
 
-    // 4������ Download the source ZIP from Blob and unpack it
+    // 3������ Download the source ZIP and unpack it
     const zipBlob = await fetchBlob(scan.blob_id as string);
     const zipPath = join(workDir, 'source.zip');
     await writeFile(zipPath, zipBlob);
     await exec(`unzip -qo ${zipPath} -d ${workDir}`);
 
-    // 5������ Gather the list of source files we need to analyse
-    //    (skip directories, only keep files with extensions we care about)
+    // 4������ List source files we care about
     const allFiles = await readdir(workDir, { withFileTypes: true });
     const srcFiles = allFiles
       .filter(f => f.isFile() && /\.(c|cc|cpp|cxx|py|java)$/i.test(f.name))
       .map(f => join(workDir, f.name));
 
-    // 6������ Determine which files are still pending
-    const startIdx = scan.processed_files ?? 0; // already done
+    // 5������ Determine what still needs to be done
+    const startIdx = scan.processed_files ?? 0;
     const remaining = srcFiles.slice(startIdx);
     if (remaining.length === 0) {
-      // Nothing left – finalise
+      // Nothing left → finalise
       await finalizeScan(scanId, workDir);
       return NextResponse.json({
         status: 'COMPLETED',
@@ -100,33 +96,31 @@ export const POST = async (req: Request): Promise<NextResponse> => {
       });
     }
 
-    // 7������ Process a *batch* of files (size tuned for Hobby tier)
+    // 6������ Process a *batch* of files (size tuned for Hobby tier)
     const BATCH_SIZE = 7; // tweak after you see logs
     const batch = remaining.slice(0, BATCH_SIZE);
     const batchPromises = batch.map(f => analyseSingleFile(f, workDir));
     const batchResults = await Promise.allSettled(batchPromises);
 
-    // 8������ Collect successful results
+    // 7������ Collect successful results
     const newJson: any = { project: null, files: [] as any[], hotspots: { gitAvailable: false, files: [] }, violations: [] };
     const newHtmlParts: string[] = [];
 
     for (const res of batchResults) {
       if (res.status === 'fulfilled' && res.value) {
         const { json, html } = res.value;
-        // Merge into the running totals
-        if (!newJson.project) newJson.project = json.project; // first file sets the project‑level summary
+        if (!newJson.project) newJson.project = json.project; // first file sets project‑level summary
         newJson.files = [...newJson.files, ...json.files];
-        newJson.hotspots.files = [...newJson.hotspots.files, ...json.hotspots?.files ?? []];
+        newJson.hotspots.files = [...newJson.hotspots.files, ...(json.hotspots?.files ?? [])];
         newJson.violations = [...newJson.violations, ...json.violations];
         newHtmlParts.push(html);
       } else {
-        // Log individual file failures but continue
         if (res.status === 'rejected')
           console.warn(`File analysis failed:`, res.reason);
       }
     }
 
-    // 9������ Merge the batch results into the running Blob storage
+    // 8������ Merge batch results into the running Blob storage
     const mergedJson = await mergeBlobJson(scan.json_blob_id, newJson);
     const mergedHtml = await mergeBlobHtml(scan.html_blob_id, newHtmlParts.join('\n'));
 
@@ -139,10 +133,10 @@ export const POST = async (req: Request): Promise<NextResponse> => {
       WHERE id = ${scanId}
     `;
 
-    // 10������ If we still have files left, tell the caller we are still processing
+    // 9������ If work remains, tell the caller we are still processing
     const stillPending = remaining.length > BATCH_SIZE;
     return NextResponse.json({
-      status: stillPending ? 'PROCESSING' : 'QUEUED', // QUEUED signals “more work but not yet started”
+      status: stillPending ? 'PROCESSING' : 'QUEUED', // QUEUED = “more work but not yet started”
       processedFiles: scan.processed_files + batch.length,
       totalFiles: scan.total_files,
     });
@@ -182,8 +176,7 @@ async function analyseSingleFile(
     ]);
     return { json: JSON.parse(jsonBuf), html: htmlBuf };
   } catch (e) {
-    // If the binary times out or crashes we treat the file as failed
-    console.warn(`Single-file analysis failed for ${filePath}:`, e);
+    console.warn(`Single‑file analysis failed for ${filePath}:`, e);
     return null;
   }
 }
@@ -236,11 +229,10 @@ async function mergeBlobHtml(
 }
 
 // -------------------------------------------------------------------
-// Final step – when no files remain, we just ensure the Blobs are up‑to‑date
+// Final step – when no files remain, just mark the scan COMPLETED
 // -------------------------------------------------------------------
 async function finalizeScan(scanId: string, workDir: string): Promise<void> {
-  // Ensure the Blobs contain the latest merged data (they already are after the last batch)
-  // Mark scan as COMPLETED
+  // Mark scan as COMPLETED (the Blobs already contain the merged data)
   await sql`
     UPDATE scans
     SET status = 'COMPLETED',
@@ -248,5 +240,5 @@ async function finalizeScan(scanId: string, workDir: string): Promise<void> {
     WHERE id = ${scanId}
   `;
   // Clean up the temporary workspace (best effort)
-  await rmrf(workDir);
+  try { await import('fs/promises').then(f => f.rm(workDir, { recursive: true, force: true })); } catch {}
 }
