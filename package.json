@@ -1,10 +1,8 @@
 {
-  "name": "repo-sight-vercel",
+  "name": "repo-sight",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build:analyzer": "apt-get update && apt-get install -y cmake make && mkdir -p frontend/backend/bin && cd analyzer && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j && strip cma && cp cma ../../frontend/backend/bin/linux-x64-cma"
-  },
-  "dependencies": {},
-  "devDependencies": {}
+    "build": "echo \"No root build required\""
+  }
 }
