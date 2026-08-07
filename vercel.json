@@ -10,7 +10,7 @@
   
     "frontend/app/api/scans/[scanId]/analyze/route.ts": {
       "runtime": "nodejs18.x",
-      "maxDuration": 270        
+      "maxDuration": 300     
     }
   },
   "rewrites": [
@@ -18,3 +18,4 @@
     { "source": "/(.*)", "destination": "/frontend/app/page.tsx" }
   ]
 }
+300
