@@ -5,11 +5,11 @@
   "functions": {
   
     "frontend/app/api/**/*.js": {
-      "runtime": "nodejs18.x"
+      "runtime": "nodejs20.x"
     },
   
     "frontend/app/api/scans/[scanId]/analyze/route.ts": {
-      "runtime": "nodejs18.x",
+      "runtime": "nodejs20.x",
       "maxDuration": 300     
     }
   },
