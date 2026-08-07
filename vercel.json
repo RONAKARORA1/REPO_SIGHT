@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build:analyzer",
-  "outputDirectory": ".",
+  "outputDirectory": "frontend",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/frontend/app/api/$1" },
     { "source": "/(.*)", "destination": "/frontend/app/page.tsx" }
