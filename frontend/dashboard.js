@@ -3,6 +3,7 @@
 
 class CMADashboard {
     constructor() {
+        this.progressBar = null;   // will hold the DOM element once we need it
         this.theme = localStorage.getItem('cma-theme') || 'modern';
         this.soundEnabled = localStorage.getItem('cma-sound') !== 'false';
         this.lastAnalysisDate = localStorage.getItem('cma-last-analysis');
