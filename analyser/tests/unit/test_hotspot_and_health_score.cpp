@@ -71,7 +71,7 @@ public:
 private:
     void run(const std::string& cmd) const {
         const std::string full = "cd \"" + m_path.string() + "\" && " + cmd + " > /dev/null 2>&1";
-        std::system(full.c_str());
+     (void)std::system(full.c_str());
     }
  
     fs::path m_path;
