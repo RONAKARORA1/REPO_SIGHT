@@ -1,7 +1,7 @@
 #cat > CMakeLists.txt << 'EOF'
 cmake_minimum_required(VERSION 3.16)
 project(CodeMetricsAnalyzer VERSION 1.0.0 LANGUAGES CXX)
-target_link_options(cma PRIVATE -static)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -61,6 +61,7 @@ target_include_directories(cma_report PUBLIC ${INCLUDE_DIR})
 target_link_libraries(cma_report PUBLIC cma_metrics)
 
 add_executable(cma src/main.cpp)
+target_link_options(cma PRIVATE -static)
 target_link_libraries(cma PRIVATE
     cma_lexer
     cma_filesystem
