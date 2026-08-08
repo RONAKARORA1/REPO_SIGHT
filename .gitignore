@@ -1,7 +1,6 @@
 # Ignore stray Node.js binary that appeared while testing jsonlint
 node
 # Existing ignore patterns (keep them)
-backend/bin/
 web/
 node_modules/
-analyzer/build/
+analyser/build/
