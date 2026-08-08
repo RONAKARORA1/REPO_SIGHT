@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:analyzer": "command -v apt-get >/dev/null 2>&1 && apt-get update && apt-get install -y --no-install-recommends cmake make g++ binutils || (echo \"apt-get not found – assuming cmake, make, g++ are already installed\" && false); mkdir -p frontend/backend/bin && cd analyzer && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j && cp cma ../../frontend/backend/bin/linux-x64-cma",
+    "build:analyser": "command -v apt-get >/dev/null 2>&1 && apt-get update && apt-get install -y --no-install-recommends cmake make g++ binutils || (echo \"apt-get not found – assuming cmake, make, g++ are already installed\" && false); mkdir -p frontend/backend/bin && cd analyzer && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j && cp cma ../../frontend/backend/bin/linux-x64-cma",
     "install:backend": "cd backend && npm install"
   },
   "dependencies": {},
