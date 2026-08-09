@@ -44,7 +44,6 @@
                 </div>
                 <div id="dev-fact">
                     <!-- Random developer fact will be injected here -->
-                be injected here -->
                 </div>
             </div>
         </div>
@@ -65,3 +64,161 @@
                 <div class="health-score-container">
                     <div class="health-score-gauge">
                         <div class="gauge-fill"></div>
+                        <div class="gauge-label" id="health-score-value">--</div>
+                        <div class="gauge-grade" id="health-grade">--</div>
+                    </div>
+                    <div class="health-score-details">
+                        <p><strong>Code Health Score:</strong> <span id="health-score-numeric">0</span>/100</p>
+                        <p><strong>Grade:</strong> <span id="health-grade-letter">F</span></p>
+                        <p id="health-score-meme"></p>
+                    </div>
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <h3>📁 Files Analyzed</h3>
+                        <p class="metric-value" id="files-analyzed">0</p>
+                    </div>
+                    <div class="metric-card">
+                        <h3>📏 Total Lines</h3>
+                        <p class="metric-value" id="total-lines">0</p>
+                    </div>
+                    <div class="metric-card">
+                        <h3>💬 Comment Lines</h3>
+                        <p class="metric-value" id="comment-lines">0</p>
+                    </div>
+                    <div class="metric-card">
+                        <h3>🔧 Functions</h3>
+                        <p class="metric-value" id="function-count">0</p>
+                    </div>
+                    <div class="metric-card">
+                        <h3>🐞 TODO Count</h3>
+                        <p class="metric-value" id="todo-count">0</p>
+                    </div>
+                </div>
+
+                <div class="achievement-streak">
+                    <h3>🔥 Your Coding Streak</h3>
+                    <p id="streak-message">Start analyzing to build your streak!</p>
+                    <div id="streak-visual"></div>
+                </div>
+            </div>
+
+            <div class="tab-panel" id="hotspots-panel">
+                <h2>🔥 Hotspot Files</h2>
+                <p class="hotspot-help">Files ranked by complexity × git churn (where risky code meets frequent changes)</p>
+                <div id="hotspots-loading">Loading hotspot data...</div>
+                <table id="hotspots-table">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Complexity</th>
+                            <th>Churn (Commits)</th>
+                            <th>Hotspot Score</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <div class="tab-panel" id="violations-panel">
+                <h2>🚨 Code Violations</h2>
+                <p class="violations-help">Anti-patterns and best practice violations (click for explanations)</p>
+                <div id="violations-loading">Loading violations data...</div>
+                <div id="violations-filters">
+                    <label>
+                        <input type="checkbox" id="filter-info" checked>
+                        Info
+                    </label>
+                    <label>
+                        <input type="checkbox" id="filter-warning" checked>
+                        Warning
+                    </label>
+                    <label>
+                        <select id="filter-language">
+                            <option value="all">All Languages</option>
+                            <option value="cpp">C++</option>
+                            <option value="python">Python</option>
+                            <option value="java">Java</option>
+                        </select>
+                    </label>
+                </div>
+                <table id="violations-table">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Line</th>
+                            <th>Rule</th>
+                            <th>Message</th>
+                            <th>Severity</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <div class="tab-panel" id="dependencies-panel">
+                <h2>🔗 Dependency Graph</h2>
+                <p class="deps-help">Fan-in/fan-out shows code coupling (hover for details)</p>
+                <div id="deps-loading">Loading dependency data...</div>
+                <div id="dependency-graph-container"></div>
+                <table id="deps-table">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Fan-out</th>
+                            <th>Fan-in</th>
+                            <th>Depends On</th>
+                            <th>Dependent On By</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <div class="tab-panel" id="files-panel">
+                <h2>📄 File Breakdown</h2>
+                <p class="files-help">Detailed metrics per source file</p>
+                <input type="text" id="file-search" placeholder="Search files...">
+                <table id="files-table">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Lines</th>
+                            <th>Functions</th>
+                            <th>Classes</th>
+                            <th>Complexity</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <p>Generated by CMA v1.0.0 • <a href="#" id="share-report">Share Report</a></p>
+            <div class="footer-humor">
+                <span id="footer-joke">"I would tell you a UDP joke, but you might not get it."</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Audio Elements for Sound Effects -->
+    <audio id="success-sound" src="data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YU9vT18=" preload="auto"></audio>
+    <audio id="error-sound" src="data:audio/wav;base64,UklGRiQvT19XQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQvT18=" preload="auto"></audio>
+    <audio id="konami-sound" src="data:audio/wav;base64,UklGRigvT19XQVZFZm10IBAAAAABAAEAkB8AAJ+YAAACABAAZGF0YSigvT18=" preload="auto"></audio>
+
+    <!-- Vercel Web Analytics -->
+    <script>
+      window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+    </script>
+    <script defer src="/_vercel/insights/script.js"></script>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>
