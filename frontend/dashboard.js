@@ -1,675 +1,555 @@
 /* ==========================================================================
-   CMA Report Dashboard – client‑side logic
-   Features: theme/sound toggle, humour, engagement, progress bar,
-   polling for batched analysis, report rendering.
+   repo-sight dashboard — client-side logic
+   Same data contract as before: reads ?scan=<id> from the URL, polls
+   GET /api/scans/:id every 3s until COMPLETED/FAILED, then renders the
+   merged { project, files, hotspots, violations } report.
    ========================================================================== */
 
-class CMADashboard {
-    constructor() {
-        // ---- persisted UI state -------------------------------------------------
-        this.theme = localStorage.getItem('cma-theme') || 'modern';
-        this.soundEnabled = localStorage.getItem('cma-sound') !== 'false';
-        this.lastAnalysisDate = localStorage.getItem('cma-last-analysis');
-        this.analysisStreak = parseInt(localStorage.getItem('cma-streak') || '0');
+const GRADE_COLOR = { A: "#5EEAD4", B: "#5EEAD4", C: "#F5A524", D: "#F5A524", F: "#F97066" };
+const SEV_COLOR = { warning: "#F5A524", info: "#5B8DEF" };
+const LANG_LABEL = { cpp: "C++", python: "Python", java: "Java" };
 
-        // ---- UI references ------------------------------------------------------
-        this.progressBar = null;          // progress bar DOM element (created on demand)
+const LOADING_MESSAGES = [
+  "Tokenizing your source files…",
+  "Walking the token stream…",
+  "Counting cyclomatic complexity…",
+  "Scanning for anti-patterns…",
+  "Cross-referencing git history…",
+  "Computing the health score…",
+];
 
-        // ---- data ---------------------------------------------------------------
-        this.jsonData = null;             // holds the final report when COMPLETED
+const LOADING_TIPS = [
+  "Tip: repo-sight badges embed live in your README and update on every scan.",
+  "Tip: hotspot score = complexity × commit churn — the files most worth reviewing first.",
+  "Tip: rules never fail a build on their own — that's a separate quality-gate step.",
+  "Tip: run inside a git repo to unlock hotspot analysis.",
+];
 
-        // ---- static pools for humour / facts ------------------------------------
-        this.devJokes = [
-            "Why do programmers prefer dark mode? Because light attracts bugs!",
-            "There are 10 types of people in the world: those who understand binary, and those who don't.",
-            "Debugging: Removing the needles from the haystack.",
-            "I told my wife she was drawing her eyebrows too high. She looked surprised.",
-            "Why did the programmer quit his job? He didn't get arrays.",
-            "A SQL query walks into a bar and sees two tables. He walks up and says 'Can I join you?'",
-            "Programmers don't byte, they nibble a bit.",
-            "The best thing about a boolean is even if you are wrong, you are only off by a bit."
-        ];
-        this.devFacts = [
-            "The first computer bug was an actual moth found in a Harvard Mark II computer in 1947.",
-            "GitHub was originally called 'Logical Awesome' during early development.",
-            "The first 1GB hard drive weighed over 500 pounds and cost $40,000 in 1980.",
-            "Python was named after Monty Python, not the snake.",
-            "The first computer programmer was Ada Lovelace in 1843.",
-            "Java was originally called 'Oak' after a tree outside James Gosling's office.",
-            "The term 'debugging' was coined by Grace Hopper when she removed a moth from a computer.",
-            "The first computer virus was created in 1983 and was called the 'Elk Cloner'."
-        ];
-        this.loadingMessages = [
-            "Analyzing your code's inner thoughts...",
-            "Counting lines faster than a caffeinated developer...",
-            "Detecting technical debt with extreme prejudice...",
-            "Calculating your code's karma score...",
-            "Sorting your functions by existential crisis level...",
-            "Measuring cyclomatic complexity like it's a competitive sport...",
-            "Searching for TODO comments like they're Easter eggs...",
-            "Validating your code's life choices..."
-        ];
-        this.healthScoreMemes = [
-            { min: 90, max: 100, text: "Your code is cleaner than a junior dev's resume!" },
-            { min: 80, max: 89, text: "Solid work! Your code would make a senior dev nod approvingly." },
-            { min: 70, max: 79, text: "Decent! Your code is like a well‑commented Stack Overflow answer." },
-            { min: 60, max: 69, text: "Getting there! Your code needs more comments than a politician's speech." },
-            { min: 50, max: 59, text: "Uh oh... Your code has more surprises than a legacy JavaScript project." },
-            { min: 40, max: 49, text: "Yikes! Time to refactor before your code becomes sentient and vengeful." },
-            { min: 30, max: 39, text: "Yikes yikes! Your cyclomatic complexity is trying to escape." },
-            { min: 0, max: 29, text: "Holy spaghetti, Batman! This code needs more structure than a toddler's LEGO project." }
-        ];
+class RepoSightDashboard {
+  constructor() {
+    this.jsonData = null;
+    this.activeTab = "overview";
+    this.violationFilters = { severity: "all", language: "all", search: "" };
+    this.lastAnalysisDate = localStorage.getItem("rs-last-analysis");
+    this.analysisStreak = parseInt(localStorage.getItem("rs-streak") || "0", 10);
 
-        this.init();
+    this.init();
+  }
+
+  init() {
+    this.bindNav();
+    this.bindFilters();
+    this.loadReport();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Navigation                                                          */
+  /* ------------------------------------------------------------------ */
+
+  bindNav() {
+    document.querySelectorAll(".nav-item").forEach((btn) => {
+      btn.addEventListener("click", () => this.setTab(btn.dataset.tab));
+    });
+    const rerunBtn = document.getElementById("rerun-btn");
+    if (rerunBtn) {
+      rerunBtn.addEventListener("click", () => window.location.reload());
+    }
+  }
+
+  setTab(tab) {
+    this.activeTab = tab;
+    document.querySelectorAll(".nav-item").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.tab === tab);
+    });
+    const panels = {
+      overview: "overview-panel",
+      hotspots: "hotspots-panel-wrap",
+      violations: "violations-panel-wrap",
+      dependencies: "dependencies-panel-wrap",
+      files: "files-panel-wrap",
+    };
+    Object.entries(panels).forEach(([key, id]) => {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle("active", key === tab);
+    });
+    const titles = {
+      overview: "Overview",
+      hotspots: "Hotspots",
+      violations: "Violations",
+      dependencies: "Dependencies",
+      files: "Files",
+    };
+    document.getElementById("page-title").textContent = titles[tab];
+  }
+
+  bindFilters() {
+    const search = document.getElementById("violation-search");
+    if (search) {
+      search.addEventListener("input", (e) => {
+        this.violationFilters.search = e.target.value;
+        this.renderViolations();
+      });
+    }
+    document.querySelectorAll(".filter-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".filter-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        this.violationFilters.severity = btn.dataset.severity;
+        this.renderViolations();
+      });
+    });
+    const langSelect = document.getElementById("filter-language");
+    if (langSelect) {
+      langSelect.addEventListener("change", (e) => {
+        this.violationFilters.language = e.target.value;
+        this.renderViolations();
+      });
+    }
+    const fileSearch = document.getElementById("file-search");
+    if (fileSearch) {
+      fileSearch.addEventListener("input", (e) => this.renderFiles(e.target.value));
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Load / poll                                                         */
+  /* ------------------------------------------------------------------ */
+
+  loadReport() {
+    const scanId = new URLSearchParams(window.location.search).get("scan");
+    if (!scanId) {
+      this.showError(
+        "No scan ID provided.",
+        "Append ?scan=<id> to the URL, e.g. index.html?scan=abc123.",
+      );
+      return;
     }
 
-    /* -----------------------------------------------------------------
-       Initialisation – theme, sound, event listeners, first load
-       ----------------------------------------------------------------- */
-    init() {
-        this.applyTheme();
-        this.bindEvents();
-        this.loadReport();                // reads ?scan=… from URL and starts polling
-        this.playKonamiListener();
-        this.updateStreakDisplay();
-        this.rotateLoadingMessage();
-        this.initTypingTest();
-        this.populateDevFact();
-    }
+    this.showLoadingState();
 
-    /* -----------------------------------------------------------------
-       Theme handling
-       ----------------------------------------------------------------- */
-    applyTheme() {
-        document.documentElement.setAttribute('data-theme', this.theme);
-        const themeSelect = document.getElementById('theme');
-        if (themeSelect) themeSelect.value = this.theme;
-    }
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/scans/${scanId}`);
+        if (!res.ok) {
+          const errTxt = await res.text();
+          throw new Error(`HTTP ${res.status}: ${errTxt}`);
+        }
+        const data = await res.json();
 
-    bindEvents() {
-        // Theme selector
-        const themeSelect = document.getElementById('theme');
-        if (themeSelect) {
-            themeSelect.addEventListener('change', e => {
-                this.theme = e.target.value;
-                localStorage.setItem('cma-theme', this.theme);
-                this.applyTheme();
-            });
+        if (data.status === "QUEUED" || data.status === "PROCESSING") {
+          const pct =
+            data.totalFiles && data.totalFiles > 0
+              ? Math.round((data.processedFiles / data.totalFiles) * 100)
+              : null;
+          this.updateLoadingProgress(data.status, pct, data.processedFiles, data.totalFiles);
+          setTimeout(poll, 3000);
+          return;
         }
 
-        // Sound toggle
-        const soundToggle = document.getElementById('sound-toggle');
-        if (soundToggle) {
-            soundToggle.addEventListener('change', e => {
-                this.soundEnabled = e.target.checked;
-                localStorage.setItem('cma-sound', this.soundEnabled ? 'true' : 'false');
-            });
+        if (data.status === "FAILED") {
+          this.showError("Analysis failed", data.errorMessage ?? "Unknown error");
+          return;
         }
 
-        // File search (in the Files tab)
-        const fileSearch = document.getElementById('file-search');
-        if (fileSearch) {
-            fileSearch.addEventListener('input', e => this.filterFiles(e.target.value));
-        }
-    }
-
-    /* -----------------------------------------------------------------
-       Load report – polling loop
-       ----------------------------------------------------------------- */
-    loadReport() {
-        const scanId = new URLSearchParams(window.location.search).get('scan');
-        if (!scanId) {
-            this.showError('No scan ID provided. Use ?scan=123');
-            return;
+        if (data.status === "COMPLETED") {
+          this.jsonData = {
+            project: data.project,
+            files: data.files || [],
+            hotspots: data.hotspots || { gitAvailable: false, topFiles: [] },
+            violations: data.violations || [],
+          };
+          this.hideLoadingState();
+          this.populateReport(data.projectName, data.scanId);
+          return;
         }
 
-        // Show loading UI (spinner, while‑you‑wait mini‑games, etc.)
-        this.showLoadingState();
+        this.showError("Unknown scan status", String(data.status));
+      } catch (err) {
+        console.error("Polling error:", err);
+        this.showError("Polling failed", err.message);
+      }
+    };
 
-        // -----------------------------------------------------------------
-        // Polling function – calls /api/scans/:id every 3 seconds
-        // -----------------------------------------------------------------
-        const poll = async () => {
-            try {
-                const res = await fetch(`/api/scans/${scanId}`);
-                if (!res.ok) {
-                    const errTxt = await res.text();
-                    throw new Error(`HTTP ${res.status}: ${errTxt}`);
-                }
-                const data = await res.json();
+    poll();
+  }
 
-                // ---------- QUEUED / PROCESSING ----------
-                if (data.status === 'QUEUED' || data.status === 'PROCESSING') {
-                    const pct = data.totalFiles && data.totalFiles > 0
-                        ? Math.round((data.processedFiles / data.totalFiles) * 100)
-                        : 0;
-                    this.updateProgressBar(pct);
-                    setTimeout(poll, 3000);
-                    return;
-                }
+  /* ------------------------------------------------------------------ */
+  /* Loading / error UI                                                  */
+  /* ------------------------------------------------------------------ */
 
-                // ---------- FAILED ----------
-                if (data.status === 'FAILED') {
-                    this.hideLoadingState();
-                    this.showError(data.errorMessage ?? 'Analysis failed');
-                    return;
-                }
+  showLoadingState() {
+    document.getElementById("loading-state").classList.remove("hidden");
+    document.getElementById("report-content").classList.add("hidden");
+    document.getElementById("loading-message").textContent = this.pick(LOADING_MESSAGES);
+    document.getElementById("loading-tip").textContent = this.pick(LOADING_TIPS);
+    this._loadingRotator = setInterval(() => {
+      const el = document.getElementById("loading-message");
+      if (el) el.textContent = this.pick(LOADING_MESSAGES);
+    }, 3500);
+  }
 
-                // ---------- COMPLETED ----------
-                if (data.status === 'COMPLETED') {
-                    this.hideLoadingState();
-                    this.hideProgressBar();
-                    // data already contains the merged report (project, files, hotspots, violations)
-                    this.jsonData = {
-                        project: data.project,
-                        files: data.files,
-                        hotspots: data.hotspots,
-                        violations: data.violations
-                    };
-                    this.populateReport();          // render the full report
-                    return;
-                }
+  updateLoadingProgress(status, pct, processed, total) {
+    const label = status === "QUEUED" ? "Queued…" : "Analyzing…";
+    document.getElementById("loading-message").textContent = label;
+    const progressEl = document.getElementById("loading-progress");
+    if (progressEl) {
+      progressEl.textContent =
+        pct != null ? `${processed ?? 0}/${total} files (${pct}%)` : "";
+    }
+  }
 
-                // ---------- UNKNOWN STATUS ----------
-                this.hideLoadingState();
-                this.showError(`Unknown scan status: ${data.status}`);
-            } catch (err) {
-                console.error('Polling error:', err);
-                this.hideLoadingState();
-                this.showError(`Polling failed: ${err.message}`);
-            }
-        };
+  hideLoadingState() {
+    if (this._loadingRotator) clearInterval(this._loadingRotator);
+    document.getElementById("loading-state").classList.add("hidden");
+    document.getElementById("report-content").classList.remove("hidden");
+  }
 
-        // Start the first poll immediately
-        poll();
+  showError(title, detail) {
+    if (this._loadingRotator) clearInterval(this._loadingRotator);
+    const loadingState = document.getElementById("loading-state");
+    loadingState.innerHTML = `
+      <div class="error-panel">
+        <h2>${this.escape(title)}</h2>
+        <p>${this.escape(detail)}</p>
+      </div>
+    `;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Report rendering                                                    */
+  /* ------------------------------------------------------------------ */
+
+  populateReport(projectName, scanId) {
+    if (!this.jsonData) return;
+    const project = this.jsonData.project || {};
+
+    document.getElementById("sidebar-project").textContent = projectName || "project";
+    document.getElementById("sidebar-scan").textContent = scanId
+      ? `scan #${String(scanId).slice(0, 8)}`
+      : "";
+    document.getElementById("page-subtitle").textContent =
+      `${project.filesAnalyzed ?? 0} files · ${this.formatNumber(project.totalLines ?? 0)} lines analyzed`;
+
+    document.getElementById("nav-count-hotspots").textContent =
+      this.jsonData.hotspots?.topFiles?.length || "";
+    document.getElementById("nav-count-violations").textContent =
+      this.jsonData.violations?.length || "";
+    document.getElementById("nav-count-files").textContent =
+      this.jsonData.files?.length || "";
+
+    this.renderOverview(project);
+    this.renderHotspots(this.jsonData.hotspots);
+    this.renderViolations();
+    this.renderDependencies(this.jsonData.files);
+    this.renderFiles("");
+    this.updateStreak();
+  }
+
+  renderOverview(project) {
+    const score = project.healthScore ?? 0;
+    const grade = project.healthGrade ?? "F";
+    const color = GRADE_COLOR[grade] || "#F97066";
+
+    const r = 54;
+    const c = 2 * Math.PI * r;
+    const pct = Math.max(0, Math.min(100, score));
+    const fill = document.getElementById("gauge-fill");
+    if (fill) {
+      fill.style.stroke = color;
+      fill.style.strokeDasharray = String(c);
+      fill.style.strokeDashoffset = String(c - (pct / 100) * c);
+      fill.style.filter = `drop-shadow(0 0 6px ${color}66)`;
+    }
+    document.getElementById("health-score-value").textContent = Math.round(score);
+    const gradeEl = document.getElementById("health-grade");
+    gradeEl.textContent = `GRADE ${grade}`;
+    gradeEl.style.color = color;
+
+    const violations = this.jsonData.violations || [];
+    document.getElementById("count-critical").textContent = 0;
+    document.getElementById("count-warning").textContent = violations.filter(
+      (v) => v.severity === "warning",
+    ).length;
+    document.getElementById("count-info").textContent = violations.filter(
+      (v) => v.severity === "info",
+    ).length;
+
+    document.getElementById("function-count").textContent = project.functionCount ?? 0;
+    document.getElementById("complexity-count").textContent = project.cyclomaticComplexity ?? 0;
+    document.getElementById("todo-count").textContent = project.todoCount ?? 0;
+    document.getElementById("nesting-depth").textContent = project.maxNestingDepth ?? 0;
+
+    const longestPanel = document.getElementById("longest-fn-panel");
+    if (project.longestFunctionLines > 0) {
+      longestPanel.classList.remove("hidden");
+      document.getElementById("longest-fn-name").textContent = project.longestFunctionName;
+      document.getElementById("longest-fn-lines").textContent =
+        `${project.longestFunctionLines} lines`;
+      const barPct = Math.min(100, (project.longestFunctionLines / 100) * 100);
+      document.getElementById("longest-fn-bar").style.width = `${barPct}%`;
+    } else {
+      longestPanel.classList.add("hidden");
+    }
+  }
+
+  renderHotspots(hotspots) {
+    const wrap = document.getElementById("hotspots-panel-wrap");
+    hotspots = hotspots || { gitAvailable: false, topFiles: [] };
+
+    if (!hotspots.gitAvailable) {
+      wrap.innerHTML = `
+        <div class="empty-state">
+          <p>Git history not available for this scan.</p>
+          <p class="hint">Run repo-sight inside a git repository to surface complexity × churn hotspots.</p>
+        </div>`;
+      return;
+    }
+    if (!hotspots.topFiles || hotspots.topFiles.length === 0) {
+      wrap.innerHTML = `<div class="empty-state"><p>No hotspot data available.</p></div>`;
+      return;
     }
 
-    /* -----------------------------------------------------------------
-       UI state helpers
-       ----------------------------------------------------------------- */
-    showLoadingState() {
-        document.getElementById('loading-state').classList.remove('hidden');
-        document.getElementById('report-content').classList.add('hidden');
-        document.getElementById('loading-message').textContent = this.getRandomJoke();
-    }
+    const files = hotspots.topFiles;
+    const maxComplexity = Math.max(1, ...files.map((f) => f.cyclomaticComplexity));
+    const maxCommits = Math.max(1, ...files.map((f) => f.commitCount));
 
-    showProcessingState(currentStatus) {
-        document.getElementById('loading-state').classList.remove('hidden');
-        document.getElementById('report-content').classList.add('hidden');
-        const msg = currentStatus === 'QUEUED'
-            ? 'Your analysis is queued...'
-            : 'Analyzing your code...';
-        document.getElementById('loading-message').textContent = msg;
-        // keep the mini‑game / fact alive while we wait
-        this.initTypingTest();
-        this.populateDevFact();
-    }
-
-    hideLoadingState() {
-        document.getElementById('loading-state').classList.add('hidden');
-        document.getElementById('report-content').classList.remove('hidden');
-    }
-
-    showError(message) {
-        const loadingState = document.getElementById('loading-state');
-        loadingState.innerHTML = `
-            <div class="error-message">
-                <h2>��� Oops!</h2>
-                <p>${message}</p>
-                <p>Tip: Make sure you ran the analysis with a valid scan ID.</p>
+    const rows = files
+      .map(
+        (h) => `
+      <tr>
+        <td class="mono">${this.escape(h.path)}</td>
+        <td class="mono">${h.cyclomaticComplexity}</td>
+        <td class="mono">${h.commitCount}</td>
+        <td>
+          <div class="hotspot-bar-cell">
+            <div class="hotspot-bar-track">
+              <div class="hotspot-bar-fill" style="width:${h.hotspotScore}%;background:${
+                h.hotspotScore > 50 ? "#F97066" : "#F5A524"
+              }"></div>
             </div>
-        `;
+            <span class="mono">${h.hotspotScore.toFixed(1)}</span>
+          </div>
+        </td>
+        <td class="formula">(${h.cyclomaticComplexity}/${maxComplexity}) × (${h.commitCount}/${maxCommits}) × 100</td>
+      </tr>`,
+      )
+      .join("");
+
+    wrap.innerHTML = `
+      <div class="panel">
+        <table id="hotspots-table">
+          <thead><tr><th>File</th><th>Complexity</th><th>Commits</th><th>Score</th><th>Formula</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  renderViolations() {
+    const violations = this.jsonData?.violations || [];
+    const { severity, language, search } = this.violationFilters;
+    const q = search.toLowerCase();
+
+    const filtered = violations.filter(
+      (v) =>
+        (severity === "all" || v.severity === severity) &&
+        (language === "all" || v.language === language) &&
+        (q === "" || v.path.toLowerCase().includes(q) || v.ruleId.toLowerCase().includes(q)),
+    );
+
+    const tbody = document.querySelector("#violations-table tbody");
+    if (!tbody) return;
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr class="no-data"><td colspan="5">No violations match current filters.</td></tr>`;
+      return;
     }
 
-    /* -----------------------------------------------------------------
-       Progress bar
-       ----------------------------------------------------------------- */
-    updateProgressBar(percent) {
-        if (!this.progressBar) {
-            const container = document.createElement('div');
-            container.style.width = '100%';
-            container.style.backgroundColor = '#e0e0e0';
-            container.style.borderRadius = '4px';
-            container.style.overflow = 'hidden';
-            container.style.height = '20px';
-            container.style.marginTop = '1rem';
+    tbody.innerHTML = filtered
+      .map((v) => {
+        const sevColor = SEV_COLOR[v.severity] || "#8B92A3";
+        return `
+        <tr>
+          <td><span class="severity-pill severity-${v.severity}" style="color:${sevColor}">${v.severity}</span></td>
+          <td class="mono" style="font-size:12px">${this.escape(v.ruleId)}</td>
+          <td>
+            <span class="mono" style="font-size:12.5px">${this.escape(v.path)}</span>
+            <span class="lang-tag">${LANG_LABEL[v.language] || v.language}</span>
+          </td>
+          <td class="mono text-faint">${v.line}</td>
+          <td style="max-width:380px" title="${this.escape(v.message)}">${this.escape(this.truncate(v.message, 90))}</td>
+        </tr>`;
+      })
+      .join("");
+  }
 
-            const bar = document.createElement('div');
-            bar.style.width = '0%';
-            bar.style.backgroundColor = '#0066cc';
-            bar.style.height = '100%';
-            bar.style.transition = 'width 0.3s ease';
-            bar.id = 'cma-progress-bar';
-            container.appendChild(bar);
-            this.progressBar = bar;
+  renderDependencies(files) {
+    files = files || [];
+    const wrap = document.getElementById("dependencies-panel-wrap");
+    const withDeps = files.filter(
+      (f) => f.dependencies && (f.dependencies.fanOut > 0 || f.dependencies.fanIn > 0),
+    );
 
-            const reportContent = document.getElementById('report-content');
-            if (reportContent && reportContent.parentNode) {
-                reportContent.parentNode.insertBefore(container, reportContent);
-            }
-        }
-        this.progressBar.style.width = `${percent}%`;
+    if (withDeps.length === 0) {
+      wrap.innerHTML = `
+        <div class="empty-state">
+          <p>No cross-file dependencies detected.</p>
+          <p class="hint">Dependencies appear when files import/include other analyzed files.</p>
+        </div>`;
+      return;
     }
 
-    hideProgressBar() {
-        if (this.progressBar && this.progressBar.parentNode) {
-            this.progressBar.parentNode.removeChild(this.progressBar);
-            this.progressBar = null;
-        }
+    const rows = withDeps
+      .map(
+        (f) => `
+      <tr>
+        <td class="mono">${this.escape(f.path)}</td>
+        <td class="mono text-muted">${f.dependencies.fanOut || 0}</td>
+        <td class="mono text-muted">${f.dependencies.fanIn || 0}</td>
+        <td class="text-muted">${(f.dependencies.dependsOn || []).map((d) => this.escape(d)).join(", ")}</td>
+        <td class="text-muted">${(f.dependencies.dependedOnBy || []).map((d) => this.escape(d)).join(", ")}</td>
+      </tr>`,
+      )
+      .join("");
+
+    wrap.innerHTML = `
+      <div class="panel">
+        <table id="deps-table">
+          <thead><tr><th>File</th><th>Fan-out</th><th>Fan-in</th><th>Depends on</th><th>Depended on by</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  renderFiles(searchTerm) {
+    const allFiles = this.jsonData?.files || [];
+    const files = allFiles.filter((f) =>
+      f.path.toLowerCase().includes((searchTerm || "").toLowerCase()),
+    );
+    const tbody = document.querySelector("#files-table tbody");
+    if (!tbody) return;
+
+    if (files.length === 0) {
+      tbody.innerHTML = `<tr class="no-data"><td colspan="6">No files match your search.</td></tr>`;
+      return;
     }
 
-    /* -----------------------------------------------------------------
-       Report rendering – called when status becomes COMPLETED
-       ----------------------------------------------------------------- */
-    populateReport() {
-        if (!this.jsonData) return;
+    tbody.innerHTML = files
+      .map(
+        (f) => `
+      <tr data-path="${this.escape(f.path)}">
+        <td class="mono">${this.escape(f.path)}</td>
+        <td class="mono text-muted">${this.formatNumber(f.totalLines)}</td>
+        <td class="mono text-muted">${f.functionCount || 0}</td>
+        <td class="mono text-muted">${f.classCount || 0}</td>
+        <td class="mono text-muted">${f.cyclomaticComplexity}</td>
+        <td class="mono text-muted">${f.todoCount || 0}</td>
+      </tr>`,
+      )
+      .join("");
 
-        const project = this.jsonData.project || {};
+    tbody.querySelectorAll("tr[data-path]").forEach((row) => {
+      row.style.cursor = "pointer";
+      row.addEventListener("click", () => {
+        const path = row.dataset.path;
+        const metrics = allFiles.find((f) => f.path === path);
+        this.showFileDetail(path, metrics);
+      });
+    });
+  }
 
-        // ---------- Overview ----------
-        this.populateOverview(project);
-        this.populateHotspots(this.jsonData.hotspots || {});
-        this.populateViolations(this.jsonData.violations || []);
-        this.populateDependencies(this.jsonData.files || []);
-        this.populateFiles(this.jsonData.files || []);
+  showFileDetail(path, metrics) {
+    if (!metrics) return;
+    const root = document.getElementById("detail-root");
+    const rows = [
+      ["Total lines", this.formatNumber(metrics.totalLines)],
+      ["Blank lines", this.formatNumber(metrics.blankLines)],
+      ["Comment lines", this.formatNumber(metrics.commentLines)],
+      ["Code lines", this.formatNumber(metrics.codeLines)],
+      ["Functions", metrics.functionCount || 0],
+      ["Classes", metrics.classCount || 0],
+      ["Variables", metrics.variableCount || 0],
+      ["Includes", metrics.includeCount || 0],
+      ["Loops", metrics.loopCount || 0],
+      ["Conditions", metrics.conditionCount || 0],
+      ["Try/catch", metrics.tryCatchCount || 0],
+      ["Max nesting", metrics.maxNestingDepth],
+      ["Cyclomatic complexity", metrics.cyclomaticComplexity],
+      ["TODOs", metrics.todoCount || 0],
+    ];
 
-        // ---------- Streak / achievement ----------
-        this.updateStreak();
+    root.innerHTML = `
+      <div class="detail-overlay" id="detail-overlay"></div>
+      <div class="detail-panel">
+        <div class="detail-panel-head">
+          <span class="detail-panel-title">${this.escape(path)}</span>
+          <button class="detail-close" id="detail-close">×</button>
+        </div>
+        ${rows
+          .map(
+            ([label, value]) => `
+          <div class="detail-row">
+            <span class="detail-row-label">${label}</span>
+            <span class="detail-row-value">${value}</span>
+          </div>`,
+          )
+          .join("")}
+      </div>`;
+
+    const close = () => {
+      root.innerHTML = "";
+    };
+    document.getElementById("detail-overlay").addEventListener("click", close);
+    document.getElementById("detail-close").addEventListener("click", close);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Streak                                                              */
+  /* ------------------------------------------------------------------ */
+
+  updateStreak() {
+    const today = new Date().toISOString().slice(0, 10);
+    if (this.lastAnalysisDate !== today) {
+      this.analysisStreak = this.lastAnalysisDate ? this.analysisStreak + 1 : 1;
+      this.lastAnalysisDate = today;
+      localStorage.setItem("rs-last-analysis", today);
+      localStorage.setItem("rs-streak", String(this.analysisStreak));
     }
-
-    // -----------------------------------------------------------------
-    // Overview panel
-    // -----------------------------------------------------------------
-    populateOverview(project) {
-        const healthScore = project.healthScore || 0;
-        const healthGrade = project.healthGrade || 'F';
-
-        // gauge fill
-        const gaugeFill = document.querySelector('.gauge-fill');
-        if (gaugeFill) {
-            gaugeFill.style.width = `${Math.min(healthScore, 100)}%`;
-            const gradeColors = { A: '#4c1', B: '#97ca00', C: '#dfb317', D: '#fe7d37', F: '#e05d44' };
-            gaugeFill.style.backgroundColor = gradeColors[healthGrade] || '#e05d44';
-        }
-
-        // gauge label / grade
-        document.getElementById('health-score-value').textContent = `${healthScore}`;
-        document.getElementById('health-grade').textContent = healthGrade;
-        document.getElementById('health-score-numeric').textContent = healthScore;
-        document.getElementById('health-grade-letter').textContent = healthGrade;
-
-        // meme
-        const meme = this.healthScoreMemes.find(m => healthScore >= m.min && healthScore <= m.max);
-        document.getElementById('health-score-meme').textContent = meme ? meme.text : '';
-
-        // other metrics
-        document.getElementById('files-analyzed').textContent = project.filesAnalyzed || 0;
-        document.getElementById('total-lines').textContent = this.formatNumber(project.totalLines || 0);
-        document.getElementById('comment-lines').textContent = this.formatNumber(project.commentLines || 0);
-        document.getElementById('function-count').textContent = project.functionCount || 0;
-        document.getElementById('todo-count').textContent = project.todoCount || 0;
+    const msg = document.getElementById("streak-message");
+    const vis = document.getElementById("streak-visual");
+    if (msg && vis) {
+      const days = this.analysisStreak === 1 ? "day" : "days";
+      msg.textContent = `You've analyzed code ${this.analysisStreak} ${days} in a row.`;
+      vis.textContent = "●".repeat(Math.min(this.analysisStreak, 5));
     }
+  }
 
-    // -----------------------------------------------------------------
-    // Hotspots panel
-    // -----------------------------------------------------------------
-    populateHotspots(hotspots) {
-        const tbody = document.querySelector('#hotspots-table tbody');
-        tbody.innerHTML = '';
+  /* ------------------------------------------------------------------ */
+  /* Helpers                                                             */
+  /* ------------------------------------------------------------------ */
 
-        if (!hotspots.gitAvailable) {
-            document.getElementById('hotspots-panel').innerHTML = `
-                <p class="no-data">���� No git repository detected. Hotspot analysis requires a git repo.</p>
-                <p class="no-data-hint">Run CMA inside a git repository to see hotspot scores (complexity × churn).</p>
-            `;
-            return;
-        }
+  pick(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
 
-        const files = hotspots.files || [];
-        if (files.length === 0) {
-            document.getElementById('hotspots-panel').innerHTML = `
-                <p class="no-data">���� No hotspot data available.</p>
-            `;
-            return;
-        }
+  formatNumber(num) {
+    return (num ?? 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
 
-        document.getElementById('hotspots-loading').classList.add('hidden');
+  truncate(str, len) {
+    return str.length > len ? str.slice(0, len - 1) + "…" : str;
+  }
 
-        // Normalise for display (same formula as backend)
-        const maxComplexity = Math.max(1, ...files.map(f => f.cyclomaticComplexity));
-        const maxCommits = Math.max(1, ...files.map(f => f.commitCount));
-
-        files.forEach(h => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${this.shortenPath(h.path)}</td>
-                <td>${h.cyclomaticComplexity}</td>
-                <td>${h.commitCount}</td>
-                <td>${h.hotspotScore.toFixed(1)}</td>
-                <td>
-                    <div class="hotspot-details">
-                        <p>���� <strong>Path:</strong> ${h.path}</p>
-                        <p>���� <strong>Lines Added:</strong> ${this.formatNumber(h.linesAdded)}</p>
-                        <p>���� <strong>Lines Deleted:</strong> ${this.formatNumber(h.linesDeleted)}</p>
-                        <p>���� <strong>Hotspot Formula:</strong> (${h.cyclomaticComplexity}/${maxComplexity}) × (${h.commitCount}/${maxCommits}) × 100</p>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-
-    // -----------------------------------------------------------------
-    // Violations panel
-    // -----------------------------------------------------------------
-    populateViolations(violations) {
-        const tbody = document.querySelector('#violations-table tbody');
-        tbody.innerHTML = '';
-
-        const showInfo = document.getElementById('filter-info').checked;
-        const showWarning = document.getElementById('filter-warning').checked;
-        const filterLang = document.getElementById('filter-language').value;
-
-        const filtered = violations.filter(v =>
-            (showInfo && v.severity === 'info') ||
-            (showWarning && v.severity === 'warning')
-        ).filter(v => filterLang === 'all' || v.language === filterLang);
-
-        if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="no-data">No violations match current filters.</td></tr>';
-        } else {
-            filtered.forEach(v => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${this.shortenPath(v.path)}</td>
-                    <td>${v.line}</td>
-                    <td><code>${v.ruleId}</code></td>
-                    <td title="${v.message}">${this.truncate(v.message, 50)}</td>
-                    <td class="severity-${v.severity}">${v.severity.toUpperCase()}</td>
-                `;
-                tr.addEventListener('click', () => {
-                    alert(`Rule Explanation:\n${v.message}\n\nFile: ${v.path}\nLine: ${v.line}`);
-                });
-                tbody.appendChild(tr);
-            });
-        }
-
-        document.getElementById('violations-loading').classList.add('hidden');
-    }
-
-    // -----------------------------------------------------------------
-    // Dependencies panel
-    // -----------------------------------------------------------------
-    populateDependencies(files) {
-        const hasDeps = files.some(f =>
-            f.dependencies &&
-            (f.dependencies.fanOut > 0 || f.dependencies.fanIn > 0)
-        );
-
-        if (!hasDeps) {
-            document.getElementById('dependencies-panel').innerHTML = `
-                <p class="no-data">���� No external dependencies detected.</p>
-                <p class="no-data-hint">Dependencies are shown when files import/include other files in your project.</p>
-            `;
-            return;
-        }
-
-        document.getElementById('deps-loading').classList.add('hidden');
-        const tbody = document.querySelector('#deps-table tbody');
-        tbody.innerHTML = '';
-
-        files.forEach(f => {
-            if (!f.dependencies) return;
-            const path = f.path;
-            const deps = f.dependencies;
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${this.shortenPath(path)}</td>
-                <td>${deps.fanOut || 0}</td>
-                <td>${deps.fanIn || 0}</td>
-                <td>${deps.dependsOn ? deps.dependsOn.join(', ') : ''}</td>
-                <td>${deps.dependedOnBy ? deps.dependedOnBy.join(', ') : ''}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-
-    // -----------------------------------------------------------------
-    // Files panel
-    // -----------------------------------------------------------------
-    populateFiles(files) {
-        const tbody = document.querySelector('#files-table tbody');
-        tbody.innerHTML = '';
-
-        if (files.length === 0) {
-            document.getElementById('files-panel').innerHTML = `
-                <p class="no-data">���� No files analyzed.</p>
-            `;
-            return;
-        }
-
-        files.forEach(f => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${this.shortenPath(f.path)}</td>
-                <td>${this.formatNumber(f.totalLines)}</td>
-                <td>${f.functionCount || 0}</td>
-                <td>${f.classCount || 0}</td>
-                <td>${f.cyclomaticComplexity}</td>
-                <td>
-                    <button class="details-btn" data-path="${f.path}">Details</button>
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
-
-        // attach click handlers to the details buttons
-        document.querySelectorAll('.details-btn').forEach(btn => {
-            btn.addEventListener('click', e => {
-                const path = e.target.getAttribute('data-path');
-                const fileMetrics = files.find(f => f.path === path);
-                this.showFileDetails(path, fileMetrics);
-            });
-        });
-    }
-
-    // -----------------------------------------------------------------
-    // File search
-    // -----------------------------------------------------------------
-    filterFiles(searchTerm) {
-        const tbody = document.querySelector('#files-table tbody');
-        const rows = tbody.getElementsByTagName('tr');
-        Array.from(rows).forEach(row => {
-            const fileName = row.cells[0].textContent;
-            row.style.display = fileName.toLowerCase().includes(searchTerm.toLowerCase()) ? '' : 'none';
-        });
-    }
-
-    // -----------------------------------------------------------------
-    // Show detailed metrics for a single file
-    // -----------------------------------------------------------------
-    showFileDetails(path, metrics) {
-        if (!metrics) return;
-        const details = `
-            File: ${path}
-
-            Lines: ${this.formatNumber(metrics.totalLines)}
-            Functions: ${metrics.functionCount || 0}
-            Classes: ${metrics.classCount || 0}
-            Cyclomatic Complexity: ${metrics.cyclomaticComplexity}
-            TODO count: ${metrics.todoCount || 0}
-            Comment lines: ${this.formatNumber(metrics.commentLines)}
-            Blank lines: ${this.formatNumber(metrics.blankLines)}
-        `;
-        alert(details.trim());
-    }
-
-    // -----------------------------------------------------------------
-    // Streak / achievement logic
-    // -----------------------------------------------------------------
-    updateStreak() {
-        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-        if (this.lastAnalysisDate !== today) {
-            this.analysisStreak = (this.lastAnalysisDate ? this.analysisStreak + 1 : 1);
-            this.lastAnalysisDate = today;
-            localStorage.setItem('cma-last-analysis', today);
-            localStorage.setItem('cma-streak', this.analysisStreak);
-        }
-        this.updateStreakDisplay();
-    }
-
-    updateStreakDisplay() {
-        const streakMsg = document.getElementById('streak-message');
-        const streakVis = document.getElementById('streak-visual');
-        if (streakMsg && streakVis) {
-            streakMsg.textContent = `You've analysed code ${this.analysisStreak} ${this.analysisStreak === 1 ? 'day' : 'days'} in a row!`;
-            // simple visual: show a fire emoji repeated
-            streakVis.textContent = '����'.repeat(Math.min(this.analysisStreak, 5));
-        }
-    }
-
-    // -----------------------------------------------------------------
-    // Sound effects
-    // -----------------------------------------------------------------
-    playSound(type) {
-        if (!this.soundEnabled) return;
-        const audioMap = {
-            success: 'success-sound',
-            error: 'error-sound',
-            konami: 'konami-sound'
-        };
-        const el = document.getElementById(audioMap[type]);
-        if (el) {
-            el.currentTime = 0;
-            el.play().catch(() => {}); // ignore autoplay errors
-        }
-    }
-
-    // -----------------------------------------------------------------
-    // Konami code easter egg
-    // -----------------------------------------------------------------
-    playKonamiListener() {
-        const konami = [38,38,40,40,37,39,37,39,66,65]; // ↑���������←→←→BA
-        let index = 0;
-        const handler = e => {
-            const key = e.keyCode || e.which;
-            if (key === konami[index]) {
-                index++;
-                if (index === konami.length) {
-                    this.playSound('konami');
-                    alert('���� Konami code unlocked! You get a free coffee (virtually).');
-                    index = 0;
-                }
-            } else {
-                index = 0;
-            }
-        };
-        window.addEventListener('keydown', handler);
-    }
-
-    // -----------------------------------------------------------------
-    // Rotate loading message (joke) every few seconds while waiting
-    // -----------------------------------------------------------------
-    rotateLoadingMessage() {
-        setInterval(() => {
-            const msgEl = document.getElementById('loading-message');
-            if (msgEl && document.getElementById('loading-state').classList.contains('hidden') === false) {
-                msgEl.textContent = this.getRandomJoke();
-            }
-        }, 4000);
-    }
-
-    // -----------------------------------------------------------------
-    // Mini‑game: typing speed test (shown while waiting)
-    // -----------------------------------------------------------------
-    initTypingTest() {
-        const container = document.getElementById('mini-game-container');
-        if (!container) return;
-        container.innerHTML = '';
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.placeholder = 'Type this: "the quick brown fox jumps over the lazy dog"';
-        input.style.width = '100%';
-        input.style.padding = '0.5rem';
-        input.style.marginTop = '0.5rem';
-        const result = document.createElement('div');
-        result.style.marginTop = '0.5rem';
-        result.style.fontSize = '0.9rem';
-        container.appendChild(input);
-        container.appendChild(result);
-
-        let startTime = null;
-        input.addEventListener('input', () => {
-            const target = 'the quick brown fox jumps over the lazy dog';
-            const value = input.value;
-            if (startTime === null && value.length > 0) startTime = Date.now();
-            if (value === target) {
-                const endTime = Date.now();
-                const elapsed = (endTime - startTime) / 1000;
-                const wpm = Math.round((target.split(' ').length / elapsed) * 60);
-                result.textContent = `��� Done! ${wpm} WPM`;
-                input.disabled = true;
-            } else if (value.length > target.length) {
-                result.textContent = '��� Too long – start over';
-                input.value = '';
-                startTime = null;
-            }
-        });
-    }
-
-    // -----------------------------------------------------------------
-    // Populate a random developer fact
-    // -----------------------------------------------------------------
-    populateDevFact() {
-        const el = document.getElementById('dev-fact');
-        if (el) {
-            el.textContent = this.getRandomFact();
-        }
-    }
-
-    // -----------------------------------------------------------------
-    // Helper: random joke / fact
-    // -----------------------------------------------------------------
-    getRandomJoke() {
-        return this.devJokes[Math.floor(Math.random() * this.devJokes.length)];
-    }
-    getRandomFact() {
-        return this.devFacts[Math.floor(Math.random() * this.devFacts.length)];
-    }
-
-    // -----------------------------------------------------------------
-    // Helper: shorten long paths for display
-    // -----------------------------------------------------------------
-    shortenPath(path) {
-        if (path.length <= 20) return path;
-        return '…' + path.slice(-20);
-    }
-
-    // -----------------------------------------------------------------
-    // Helper: truncate text
-    // -----------------------------------------------------------------
-    truncate(str, len) {
-        return str.length > len ? str.slice(0, len - 1) + '…' : str;
-    }
-
-    // -----------------------------------------------------------------
-    // Helper: format large numbers with commas
-    // -----------------------------------------------------------------
-    formatNumber(num) {
-        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    }
+  escape(str) {
+    const div = document.createElement("div");
+    div.textContent = String(str ?? "");
+    return div.innerHTML;
+  }
 }
 
-/* -----------------------------------------------------------------
-   Bootstrap – wait for DOM to be ready then instantiate the dashboard
-   ----------------------------------------------------------------- */
-document.addEventListener('DOMContentLoaded', () => {
-    window.cmaDashboard = new CMADashboard();
+document.addEventListener("DOMContentLoaded", () => {
+  window.repoSightDashboard = new RepoSightDashboard();
 });
 
-/* -----------------------------------------------------------------
-   Export for possible testing (not used in production)
-   ----------------------------------------------------------------- */
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { CMADashboard };
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { RepoSightDashboard };
 }
