@@ -3,9 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "scripts": {"build:analyser": "echo 'using prebuilt binary' && chmod +x backend/bin/linux-x64-cma",
+  "scripts": {
+    "build:analyser": "echo 'using prebuilt binary' && chmod +x backend/bin/linux-x64-cma",
     "install:backend": "cd backend && npm install"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
   "devDependencies": {}
 }
