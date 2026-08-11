@@ -118,10 +118,7 @@ class RepoSightDashboard {
   loadReport() {
     const scanId = new URLSearchParams(window.location.search).get("scan");
     if (!scanId) {
-      this.showError(
-        "No scan ID provided.",
-        "Append ?scan=<id> to the URL, e.g. index.html?scan=abc123.",
-      );
+      this.renderNewScanForm();
       return;
     }
 
@@ -213,6 +210,62 @@ class RepoSightDashboard {
         <p>${this.escape(detail)}</p>
       </div>
     `;
+  }
+
+  renderNewScanForm() {
+    if (this._loadingRotator) clearInterval(this._loadingRotator);
+    const loadingState = document.getElementById("loading-state");
+    loadingState.innerHTML = `
+      <div class="new-scan-panel">
+        <h2>Analyze a repository</h2>
+        <p>Paste a public GitHub repo URL to run a fresh scan.</p>
+        <form id="new-scan-form">
+          <input
+            type="text"
+            id="new-scan-url"
+            placeholder="https://github.com/owner/repo"
+            autocomplete="off"
+          />
+          <button type="submit" id="new-scan-submit" class="btn-primary">Analyze</button>
+        </form>
+        <p id="new-scan-error" class="new-scan-error hidden"></p>
+      </div>
+    `;
+
+    const form = document.getElementById("new-scan-form");
+    const submitBtn = document.getElementById("new-scan-submit");
+    const urlInput = document.getElementById("new-scan-url");
+    const errorEl = document.getElementById("new-scan-error");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const repoUrl = urlInput.value.trim();
+      if (!repoUrl) return;
+
+      errorEl.classList.add("hidden");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Analyzing…";
+
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repoUrl }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        window.location.search = `?scan=${encodeURIComponent(data.scanId)}`;
+      } catch (err) {
+        errorEl.textContent = err.message || "Analysis failed.";
+        errorEl.classList.remove("hidden");
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Analyze";
+      }
+    });
   }
 
   /* ------------------------------------------------------------------ */
