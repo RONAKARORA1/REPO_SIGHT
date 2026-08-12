@@ -3,23 +3,25 @@
 // GET /api/scans/:scanId
 //
 // Reads `${scanId}.json` from the Supabase `scans` storage bucket
-// (written by api/analyze.js) and returns it as-is. The stored payload
-// already matches the shape frontend/dashboard.js expects:
-//   { status: "COMPLETED", scanId, projectName, project, files, hotspots, violations }
-//
-// A missing scan returns HTTP 200 with { status: "FAILED", errorMessage }
-// rather than a raw 404 -- dashboard.js branches on the `status` field
-// in the body, not on the HTTP status code, so this keeps the "scan not
-// found" case rendering through the same clean error panel as a real
-// analysis failure instead of falling into the generic "Polling failed"
-// catch-all.
+// (written by api/analyze.js) and returns it as-is.
 
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-);
+let _supabase;
+function getSupabase() {
+  if (!_supabase) {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) {
+      throw new Error(
+        "Server misconfigured: SUPABASE_URL and/or SUPABASE_SERVICE_ROLE_KEY " +
+        "are not set for this environment in Vercel Project Settings."
+      );
+    }
+    _supabase = createClient(url, key);
+  }
+  return _supabase;
+}
 
 export default async function handler(req, res) {
   const { scanId } = req.query;
@@ -30,6 +32,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    const supabase = getSupabase();
     const { data, error } = await supabase.storage.from("scans").download(`${scanId}.json`);
     if (error || !data) {
       res.status(200).json({ status: "FAILED", errorMessage: "Scan not found." });
