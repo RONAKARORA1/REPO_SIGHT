@@ -1,73 +1,52 @@
 /* ==========================================================================
-   CMA Report Dashboard - client-side logic
-   Features: theme/sound toggle, tabs, humor, engagement, progress bar,
-   polling for scan status, report rendering.
+   repo-sight dashboard — client-side logic
+   Reads ?scan=<id> from the URL and polls GET /api/scans/:id until the
+   scan is COMPLETED/FAILED, then renders { project, files, hotspots,
+   violations }. With no ?scan= param it renders the "start a new scan"
+   form, which POSTs to /api/analyze and redirects to ?scan=<id>.
    ========================================================================== */
 
-class CMADashboard {
+const GRADE_COLOR = { A: '#5eead4', B: '#5eead4', C: '#f5a524', D: '#f5a524', F: '#f97066' };
+const GAUGE_RADIUS = 54;
+const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS;
+const LONG_FUNCTION_THRESHOLD = 100; // matches cpp/py/java-long-*-function rule
+
+const PANEL_ID = {
+    overview: 'overview-panel',
+    hotspots: 'hotspots-panel-wrap',
+    violations: 'violations-panel-wrap',
+    dependencies: 'dependencies-panel-wrap',
+    files: 'files-panel-wrap',
+};
+
+const PAGE_TITLE = {
+    overview: 'Overview',
+    hotspots: 'Hotspots',
+    violations: 'Violations',
+    dependencies: 'Dependencies',
+    files: 'Files',
+};
+
+class RepoSightDashboard {
     constructor() {
-        // ---- persisted UI state -------------------------------------------------
-        this.theme = localStorage.getItem('cma-theme') || 'modern';
-        this.soundEnabled = localStorage.getItem('cma-sound') !== 'false';
-        this.lastAnalysisDate = localStorage.getItem('cma-last-analysis');
-        this.analysisStreak = parseInt(localStorage.getItem('cma-streak') || '0', 10);
-
-        // ---- UI references ------------------------------------------------------
-        this.progressBar = null;
-
-        // ---- data ---------------------------------------------------------------
         this.jsonData = null;
-
-        // ---- static pools for humour / facts ------------------------------------
-        this.devJokes = [
-            "Why do programmers prefer dark mode? Because light attracts bugs!",
-            "There are 10 types of people in the world: those who understand binary, and those who don't.",
-            "Debugging: Removing the needles from the haystack.",
-            "Why did the programmer quit his job? He didn't get arrays.",
-            "A SQL query walks into a bar and sees two tables. He walks up and says 'Can I join you?'",
-            "Programmers don't byte, they nibble a bit.",
-            "The best thing about a boolean is even if you are wrong, you are only off by a bit."
-        ];
-        this.devFacts = [
-            "The first computer bug was an actual moth found in a Harvard Mark II computer in 1947.",
-            "GitHub was originally called 'Logical Awesome' during early development.",
-            "The first 1GB hard drive weighed over 500 pounds and cost $40,000 in 1980.",
-            "Python was named after Monty Python, not the snake.",
-            "The first computer programmer was Ada Lovelace in 1843.",
-            "Java was originally called 'Oak' after a tree outside James Gosling's office.",
-            "The term 'debugging' was coined by Grace Hopper when she removed a moth from a computer.",
-            "The first computer virus was created in 1983 and was called the 'Elk Cloner'."
-        ];
-        this.healthScoreMemes = [
-            { min: 90, max: 100, text: "Your code is cleaner than a junior dev's resume!" },
-            { min: 80, max: 89,  text: "Solid work! Your code would make a senior dev nod approvingly." },
-            { min: 70, max: 79,  text: "Decent! Your code is like a well-commented Stack Overflow answer." },
-            { min: 60, max: 69,  text: "Getting there! Your code needs more comments than a politician's speech." },
-            { min: 50, max: 59,  text: "Uh oh... Your code has more surprises than a legacy JavaScript project." },
-            { min: 40, max: 49,  text: "Yikes! Time to refactor before your code becomes sentient and vengeful." },
-            { min: 30, max: 39,  text: "Yikes yikes! Your cyclomatic complexity is trying to escape." },
-            { min: 0,  max: 29,  text: "Holy spaghetti! This code needs more structure than a toddler's LEGO project." }
-        ];
+        this.meta = { projectName: '', scanId: '', createdAt: '' };
+        this.activeTab = 'overview';
+        this.violationFilters = { severity: 'all', language: 'all', search: '' };
+        this.lastAnalysisDate = localStorage.getItem('rs-last-analysis');
+        this.analysisStreak = parseInt(localStorage.getItem('rs-streak') || '0', 10);
 
         this.init();
     }
 
-    /* -----------------------------------------------------------------
-       Initialisation
-       ----------------------------------------------------------------- */
     init() {
-        this.applyTheme();
-        this.bindEvents();
+        this.bindStaticEvents();
         this.loadReport();
-        this.playKonamiListener();
         this.updateStreakDisplay();
-        this.rotateLoadingMessage();
-        this.initTypingTest();
-        this.populateDevFact();
     }
 
     /* -----------------------------------------------------------------
-       Small DOM helpers (defensive - never throw if markup drifts)
+       Small DOM helpers (defensive -- never throw if markup drifts)
        ----------------------------------------------------------------- */
     $(id) {
         return document.getElementById(id);
@@ -88,30 +67,63 @@ class CMADashboard {
             .replace(/'/g, '&#39;');
     }
 
-    /* -----------------------------------------------------------------
-       Theme handling
-       ----------------------------------------------------------------- */
-    applyTheme() {
-        document.documentElement.setAttribute('data-theme', this.theme);
-        const themeSelect = this.$('theme');
-        if (themeSelect) themeSelect.value = this.theme;
+    formatNumber(num) {
+        return Number(num || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     }
 
-    bindEvents() {
-        const themeSelect = this.$('theme');
-        if (themeSelect) {
-            themeSelect.addEventListener('change', e => {
-                this.theme = e.target.value;
-                localStorage.setItem('cma-theme', this.theme);
-                this.applyTheme();
+    shortenPath(path) {
+        if (!path) return '';
+        if (path.length <= 34) return path;
+        return '\u2026' + path.slice(-34);
+    }
+
+    truncate(str, len) {
+        if (!str) return '';
+        return str.length > len ? str.slice(0, len - 1) + '\u2026' : str;
+    }
+
+    /* -----------------------------------------------------------------
+       Static event bindings (nav, rerun, filters, search) -- these
+       elements exist in index.html from page load, unlike the report
+       tables/panels which only get their listeners once data renders.
+       ----------------------------------------------------------------- */
+    bindStaticEvents() {
+        // Sidebar nav -- was previously wired to a ".tab-btn" class that
+        // doesn't exist in the markup (nav items use ".nav-item"), so
+        // every click on Hotspots/Violations/Dependencies/Files silently
+        // did nothing and only Overview was ever reachable.
+        document.querySelectorAll('.nav-item[data-tab]').forEach(btn => {
+            btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
+        });
+
+        const rerunBtn = this.$('rerun-btn');
+        if (rerunBtn) {
+            rerunBtn.addEventListener('click', () => window.location.reload());
+        }
+
+        document.querySelectorAll('.filter-btn[data-severity]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn[data-severity]').forEach(b =>
+                    b.classList.toggle('active', b === btn)
+                );
+                this.violationFilters.severity = btn.dataset.severity;
+                this.renderViolations();
+            });
+        });
+
+        const langSelect = this.$('filter-language');
+        if (langSelect) {
+            langSelect.addEventListener('change', e => {
+                this.violationFilters.language = e.target.value;
+                this.renderViolations();
             });
         }
 
-        const soundToggle = this.$('sound-toggle');
-        if (soundToggle) {
-            soundToggle.addEventListener('change', e => {
-                this.soundEnabled = e.target.checked;
-                localStorage.setItem('cma-sound', this.soundEnabled ? 'true' : 'false');
+        const violationSearch = this.$('violation-search');
+        if (violationSearch) {
+            violationSearch.addEventListener('input', e => {
+                this.violationFilters.search = e.target.value.toLowerCase();
+                this.renderViolations();
             });
         }
 
@@ -119,94 +131,87 @@ class CMADashboard {
         if (fileSearch) {
             fileSearch.addEventListener('input', e => this.filterFiles(e.target.value));
         }
-
-        // Violation filters re-render the violations table on change
-        ['filter-info', 'filter-warning', 'filter-language'].forEach(id => {
-            const el = this.$(id);
-            if (el) {
-                el.addEventListener('change', () => {
-                    if (this.jsonData) this.populateViolations(this.jsonData.violations || []);
-                });
-            }
-        });
-
-        // Tab switching -- previously missing entirely, so only Overview
-        // was ever reachable no matter what the user clicked.
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
-        });
     }
 
     switchTab(tabName) {
-        if (!tabName) return;
-        document.querySelectorAll('.tab-btn').forEach(btn => {
+        if (!tabName || !PANEL_ID[tabName]) return;
+        this.activeTab = tabName;
+
+        document.querySelectorAll('.nav-item[data-tab]').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.tab === tabName);
         });
         document.querySelectorAll('.tab-panel').forEach(panel => {
-            panel.classList.toggle('active', panel.id === `${tabName}-panel`);
+            panel.classList.toggle('active', panel.id === PANEL_ID[tabName]);
         });
+
+        this.setText('page-title', PAGE_TITLE[tabName] || tabName);
     }
 
     /* -----------------------------------------------------------------
-       Load report - polling loop
+       Entry point -- either poll an existing scan or show the "start a
+       new scan" form.
        ----------------------------------------------------------------- */
     loadReport() {
         const scanId = new URLSearchParams(window.location.search).get('scan');
         if (!scanId) {
-            this.showError('No scan ID provided. Use ?scan=<id>');
+            this.renderNewScanForm();
             return;
         }
 
+        this.meta.scanId = scanId;
         this.showLoadingState();
+        this.pollScan(scanId);
+    }
 
-        const poll = async (attempt = 0) => {
+    pollScan(scanId, attempt = 0) {
+        const poll = async at => {
             try {
                 const res = await fetch(`/api/scans/${encodeURIComponent(scanId)}`);
+                const data = await res.json().catch(() => ({}));
 
-                if (res.status === 404) {
-                    // Storage may lag slightly right after a scan is submitted.
-                    if (attempt < 8) {
-                        setTimeout(() => poll(attempt + 1), 2500);
-                    } else {
-                        this.showError('Scan not found. The link may be invalid or expired.');
-                    }
+                // The API always answers 200 (even "not found"), signalling
+                // state through the body's `status` field instead of the
+                // HTTP status code -- so lag right after submission shows
+                // up as status: "FAILED" with a "Scan not found" message,
+                // not a 404. Retry that specific case a few times before
+                // treating it as a real failure.
+                const notFoundYet =
+                    data.status === 'FAILED' &&
+                    /not found/i.test(data.errorMessage || '') &&
+                    at < 6;
+                if (notFoundYet) {
+                    setTimeout(() => poll(at + 1), 2000);
                     return;
                 }
 
-                if (!res.ok) {
-                    const errTxt = await res.text().catch(() => '');
-                    throw new Error(`HTTP ${res.status}${errTxt ? `: ${errTxt}` : ''}`);
+                if (!res.ok && data.status === undefined) {
+                    throw new Error(`HTTP ${res.status}`);
                 }
 
-                const data = await res.json();
-
-                // Support both a status-driven contract ({status: 'QUEUED'|...})
-                // and an endpoint that just returns the finished report with
-                // no status field at all.
                 const status = data.status || (data.project ? 'COMPLETED' : 'PROCESSING');
 
                 if (status === 'QUEUED' || status === 'PROCESSING') {
                     const pct = data.totalFiles > 0
                         ? Math.round((data.processedFiles / data.totalFiles) * 100)
-                        : 0;
-                    this.updateProgressBar(pct);
+                        : null;
+                    this.updateLoadingProgress(pct);
                     setTimeout(() => poll(0), 3000);
                     return;
                 }
 
                 if (status === 'FAILED') {
-                    this.hideProgressBar();
-                    this.showError(data.errorMessage || 'Analysis failed');
+                    this.showError(data.errorMessage || 'Analysis failed.');
                     return;
                 }
 
                 if (status === 'COMPLETED') {
-                    this.hideProgressBar();
+                    this.meta.projectName = data.projectName || '';
+                    this.meta.createdAt = data.createdAt || '';
                     this.jsonData = {
                         project: data.project || {},
                         files: data.files || [],
                         hotspots: data.hotspots || { gitAvailable: false, topFiles: [] },
-                        violations: data.violations || []
+                        violations: data.violations || [],
                     };
                     this.hideLoadingState();
                     this.populateReport();
@@ -216,27 +221,88 @@ class CMADashboard {
                 this.showError(`Unknown scan status: ${status}`);
             } catch (err) {
                 console.error('Polling error:', err);
-                if (attempt < 3) {
-                    setTimeout(() => poll(attempt + 1), 3000);
+                if (at < 3) {
+                    setTimeout(() => poll(at + 1), 3000);
                 } else {
-                    this.hideProgressBar();
                     this.showError(`Could not load report: ${err.message}`);
                 }
             }
         };
 
-        poll();
+        poll(attempt);
     }
 
     /* -----------------------------------------------------------------
-       UI state helpers
+       New-scan form (no ?scan= in the URL)
+       ----------------------------------------------------------------- */
+    renderNewScanForm() {
+        const loadingState = this.$('loading-state');
+        if (!loadingState) return;
+
+        loadingState.innerHTML = `
+            <div class="new-scan-panel">
+                <h2>Analyze a GitHub repository</h2>
+                <p>Paste a public repo URL to scan it for complexity, hotspots, and rule violations.</p>
+                <form id="new-scan-form">
+                    <input type="text" id="new-scan-url" placeholder="https://github.com/owner/repo" autocomplete="off" />
+                    <button type="submit" class="btn-primary" id="new-scan-submit">Analyze</button>
+                </form>
+                <p class="new-scan-error hidden" id="new-scan-error"></p>
+            </div>
+        `;
+
+        const form = this.$('new-scan-form');
+        const urlInput = this.$('new-scan-url');
+        const submitBtn = this.$('new-scan-submit');
+        const errorEl = this.$('new-scan-error');
+
+        form.addEventListener('submit', async e => {
+            e.preventDefault();
+            const repoUrl = urlInput.value.trim();
+            if (!repoUrl) return;
+
+            errorEl.classList.add('hidden');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Analyzing\u2026';
+
+            try {
+                const res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ repoUrl }),
+                });
+                const data = await res.json().catch(() => ({}));
+
+                if (!res.ok || !data.scanId) {
+                    throw new Error(data.error || `HTTP ${res.status}`);
+                }
+
+                window.location.search = `?scan=${encodeURIComponent(data.scanId)}`;
+            } catch (err) {
+                errorEl.textContent = err.message || 'Could not start analysis.';
+                errorEl.classList.remove('hidden');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Analyze';
+            }
+        });
+    }
+
+    /* -----------------------------------------------------------------
+       Loading / error state
        ----------------------------------------------------------------- */
     showLoadingState() {
         const loadingState = this.$('loading-state');
         const reportContent = this.$('report-content');
         if (loadingState) loadingState.classList.remove('hidden');
         if (reportContent) reportContent.classList.add('hidden');
-        this.setText('loading-message', this.getRandomJoke());
+        this.setText('loading-message', 'Starting analysis\u2026');
+        this.setText('loading-progress', '');
+        this.setText('loading-tip', 'Tip: hotspot score = complexity \u00d7 commit churn \u2014 the files most worth reviewing first.');
+    }
+
+    updateLoadingProgress(pct) {
+        this.setText('loading-message', 'Analyzing source files\u2026');
+        this.setText('loading-progress', pct === null ? '' : `${pct}%`);
     }
 
     hideLoadingState() {
@@ -246,11 +312,9 @@ class CMADashboard {
         if (reportContent) reportContent.classList.remove('hidden');
     }
 
-    // Bug fix: this used to be called right after hideLoadingState(), which
-    // hid the very element the message was written into -- the user saw a
-    // blank report-content section instead of an error. Now showError always
-    // keeps loading-state visible and report-content hidden, regardless of
-    // what was called before it.
+    // Keeps loading-state visible (with report-content hidden) so the
+    // error message is actually seen, instead of hiding the element the
+    // message was written into.
     showError(message) {
         const loadingState = this.$('loading-state');
         const reportContent = this.$('report-content');
@@ -258,49 +322,11 @@ class CMADashboard {
         if (loadingState) {
             loadingState.classList.remove('hidden');
             loadingState.innerHTML = `
-                <div class="error-message">
-                    <h2>Oops!</h2>
+                <div class="error-panel">
+                    <h2>Analysis failed</h2>
                     <p>${this.escapeHtml(message)}</p>
-                    <p>Tip: Make sure you ran the analysis with a valid scan link.</p>
                 </div>
             `;
-        }
-    }
-
-    /* -----------------------------------------------------------------
-       Progress bar
-       ----------------------------------------------------------------- */
-    updateProgressBar(percent) {
-        if (!this.progressBar) {
-            const container = document.createElement('div');
-            container.style.width = '100%';
-            container.style.backgroundColor = '#e0e0e0';
-            container.style.borderRadius = '4px';
-            container.style.overflow = 'hidden';
-            container.style.height = '20px';
-            container.style.marginTop = '1rem';
-
-            const bar = document.createElement('div');
-            bar.style.width = '0%';
-            bar.style.backgroundColor = '#0066cc';
-            bar.style.height = '100%';
-            bar.style.transition = 'width 0.3s ease';
-            bar.id = 'cma-progress-bar';
-            container.appendChild(bar);
-            this.progressBar = bar;
-
-            const reportContent = this.$('report-content');
-            if (reportContent && reportContent.parentNode) {
-                reportContent.parentNode.insertBefore(container, reportContent);
-            }
-        }
-        this.progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
-    }
-
-    hideProgressBar() {
-        if (this.progressBar && this.progressBar.parentNode) {
-            this.progressBar.parentNode.parentNode?.removeChild(this.progressBar.parentNode);
-            this.progressBar = null;
         }
     }
 
@@ -311,61 +337,92 @@ class CMADashboard {
         if (!this.jsonData) return;
 
         this.populateOverview(this.jsonData.project || {});
-        this.populateHotspots(this.jsonData.hotspots || {});
-        this.populateViolations(this.jsonData.violations || []);
-        this.populateDependencies(this.jsonData.files || []);
-        this.populateFiles(this.jsonData.files || []);
-
+        this.renderHotspots();
+        this.renderViolations();
+        this.renderDependencies();
+        this.renderFiles();
+        this.updateSidebarMeta();
         this.updateStreak();
+    }
+
+    updateSidebarMeta() {
+        const project = this.jsonData.project || {};
+        this.setText('sidebar-project', this.meta.projectName || '\u2014');
+        this.setText('sidebar-scan', this.meta.scanId ? `scan ${this.meta.scanId.slice(0, 8)}` : '');
+        this.setText(
+            'page-subtitle',
+            `${this.formatNumber(project.filesAnalyzed)} files \u00b7 ${this.formatNumber(project.totalLines)} lines analyzed`
+        );
+
+        const violations = this.jsonData.violations || [];
+        const hotspots = this.jsonData.hotspots || {};
+        this.setText('nav-count-hotspots', hotspots.gitAvailable ? (hotspots.topFiles || []).length : '');
+        this.setText('nav-count-violations', violations.length || '');
+        this.setText('nav-count-files', (this.jsonData.files || []).length || '');
     }
 
     populateOverview(project) {
         const healthScore = Math.round(project.healthScore || 0);
         const healthGrade = project.healthGrade || 'F';
 
-        const gaugeFill = document.querySelector('.gauge-fill');
-        if (gaugeFill) {
-            gaugeFill.style.width = `${Math.min(healthScore, 100)}%`;
-            const gradeColors = { A: '#4c1', B: '#97ca00', C: '#dfb317', D: '#fe7d37', F: '#e05d44' };
-            gaugeFill.style.backgroundColor = gradeColors[healthGrade] || '#e05d44';
-        }
-
+        this.setGauge(healthScore, healthGrade);
         this.setText('health-score-value', `${healthScore}`);
-        this.setText('health-grade', healthGrade);
-        this.setText('health-score-numeric', healthScore);
-        this.setText('health-grade-letter', healthGrade);
+        this.setText('health-grade', `GRADE ${healthGrade}`);
 
-        const meme = this.healthScoreMemes.find(m => healthScore >= m.min && healthScore <= m.max);
-        this.setText('health-score-meme', meme ? meme.text : '');
+        const violations = this.jsonData.violations || [];
+        const bySeverity = sev => violations.filter(v => v.severity === sev).length;
+        this.setText('count-critical', bySeverity('critical'));
+        this.setText('count-warning', bySeverity('warning'));
+        this.setText('count-info', bySeverity('info'));
 
-        this.setText('files-analyzed', project.filesAnalyzed || 0);
-        this.setText('total-lines', this.formatNumber(project.totalLines || 0));
-        this.setText('comment-lines', this.formatNumber(project.commentLines || 0));
         this.setText('function-count', project.functionCount || 0);
+        this.setText('complexity-count', project.cyclomaticComplexity || 0);
         this.setText('todo-count', project.todoCount || 0);
+        this.setText('nesting-depth', project.maxNestingDepth || 0);
+
+        const longestName = project.longestFunctionName || '\u2014';
+        const longestLines = project.longestFunctionLines || 0;
+        this.setText('longest-fn-name', longestName);
+        this.setText('longest-fn-lines', longestLines ? `${longestLines} lines` : '');
+        const bar = this.$('longest-fn-bar');
+        if (bar) {
+            const pct = Math.max(0, Math.min(100, (longestLines / LONG_FUNCTION_THRESHOLD) * 100));
+            bar.style.width = `${pct}%`;
+        }
     }
 
-    populateHotspots(hotspots) {
-        const panel = this.$('hotspots-panel');
+    setGauge(score, grade) {
+        const fill = this.$('gauge-fill');
+        if (!fill) return;
+        const pct = Math.max(0, Math.min(100, score)) / 100;
+        fill.style.strokeDasharray = `${GAUGE_CIRCUMFERENCE}`;
+        fill.style.strokeDashoffset = `${GAUGE_CIRCUMFERENCE * (1 - pct)}`;
+        fill.style.stroke = GRADE_COLOR[grade] || GRADE_COLOR.F;
+    }
+
+    renderHotspots() {
+        const hotspots = this.jsonData.hotspots || {};
+        const wrap = this.$('hotspots-panel-wrap');
+        const table = this.$('hotspots-table');
 
         if (!hotspots.gitAvailable) {
-            if (panel) {
-                panel.innerHTML = `
-                    <p class="no-data">No git repository detected. Hotspot analysis requires a git repo.</p>
-                    <p class="no-data-hint">Run CMA inside a git repository to see hotspot scores (complexity x churn).</p>
-                `;
-            }
+            if (table) table.classList.add('hidden');
+            this.renderEmptyState(
+                wrap,
+                'No git history available',
+                'This scan\u2019s source was fetched as a tarball snapshot with no git history, so hotspot scoring (complexity \u00d7 commit churn) has nothing to rank against.'
+            );
             return;
         }
 
-        // Bug fix: the server field is "topFiles", not "files"
-        // (see ReportGenerator::writeHotspotsJson). Reading hotspots.files
-        // meant this table was always empty even with real hotspot data.
         const files = hotspots.topFiles || [];
         if (files.length === 0) {
-            if (panel) panel.innerHTML = `<p class="no-data">No hotspot data available.</p>`;
+            if (table) table.classList.add('hidden');
+            this.renderEmptyState(wrap, 'No hotspot data', 'No files had both complexity and commit history to score.');
             return;
         }
+        if (table) table.classList.remove('hidden');
+        this.clearEmptyState(wrap);
 
         const tbody = document.querySelector('#hotspots-table tbody');
         if (!tbody) return;
@@ -381,72 +438,71 @@ class CMADashboard {
                 <td>${h.cyclomaticComplexity}</td>
                 <td>${h.commitCount}</td>
                 <td>${(h.hotspotScore || 0).toFixed(1)}</td>
-                <td>
-                    <div class="hotspot-details">
-                        <p><strong>Path:</strong> ${this.escapeHtml(h.path)}</p>
-                        <p><strong>Lines Added:</strong> ${this.formatNumber(h.linesAdded || 0)}</p>
-                        <p><strong>Lines Deleted:</strong> ${this.formatNumber(h.linesDeleted || 0)}</p>
-                        <p><strong>Hotspot Formula:</strong> (${h.cyclomaticComplexity}/${maxComplexity}) x (${h.commitCount}/${maxCommits}) x 100</p>
-                    </div>
-                </td>
+                <td>(${h.cyclomaticComplexity}/${maxComplexity}) \u00d7 (${h.commitCount}/${maxCommits}) \u00d7 100</td>
             `;
             tbody.appendChild(tr);
         });
-
-        const loading = this.$('hotspots-loading');
-        if (loading) loading.classList.add('hidden');
     }
 
-    populateViolations(violations) {
+    renderViolations() {
+        if (!this.jsonData) return;
+        const all = this.jsonData.violations || [];
+        const { severity, language, search } = this.violationFilters;
+
+        const filtered = all
+            .filter(v => severity === 'all' || v.severity === severity)
+            .filter(v => language === 'all' || v.language === language)
+            .filter(v => {
+                if (!search) return true;
+                return (
+                    (v.path || '').toLowerCase().includes(search) ||
+                    (v.ruleId || '').toLowerCase().includes(search) ||
+                    (v.message || '').toLowerCase().includes(search)
+                );
+            });
+
         const tbody = document.querySelector('#violations-table tbody');
         if (!tbody) return;
         tbody.innerHTML = '';
 
-        const showInfo = this.$('filter-info')?.checked ?? true;
-        const showWarning = this.$('filter-warning')?.checked ?? true;
-        const filterLang = this.$('filter-language')?.value ?? 'all';
-
-        const filtered = violations
-            .filter(v => (showInfo && v.severity === 'info') || (showWarning && v.severity === 'warning'))
-            .filter(v => filterLang === 'all' || v.language === filterLang);
-
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="no-data">No violations match current filters.</td></tr>';
-        } else {
-            filtered.forEach(v => {
-                const tr = document.createElement('tr');
-                const safeMessage = this.escapeHtml(v.message);
-                tr.innerHTML = `
-                    <td>${this.escapeHtml(this.shortenPath(v.path))}</td>
-                    <td>${v.line}</td>
-                    <td><code>${this.escapeHtml(v.ruleId)}</code></td>
-                    <td title="${safeMessage}">${this.escapeHtml(this.truncate(v.message || '', 50))}</td>
-                    <td class="severity-${this.escapeHtml(v.severity)}">${this.escapeHtml((v.severity || '').toUpperCase())}</td>
-                `;
-                tr.addEventListener('click', () => {
-                    alert(`Rule Explanation:\n${v.message}\n\nFile: ${v.path}\nLine: ${v.line}`);
-                });
-                tbody.appendChild(tr);
-            });
+            const msg = all.length === 0 ? 'No violations detected.' : 'No violations match the current filters.';
+            tbody.innerHTML = `<tr class="no-data"><td colspan="5">${this.escapeHtml(msg)}</td></tr>`;
+            return;
         }
 
-        const loading = this.$('violations-loading');
-        if (loading) loading.classList.add('hidden');
+        filtered.forEach(v => {
+            const tr = document.createElement('tr');
+            const safeMessage = this.escapeHtml(v.message || '');
+            const sev = this.escapeHtml(v.severity || '');
+            tr.innerHTML = `
+                <td><span class="severity-pill severity-${sev}">${sev}</span></td>
+                <td><code>${this.escapeHtml(v.ruleId)}</code><span class="lang-tag">${this.escapeHtml(v.language)}</span></td>
+                <td>${this.escapeHtml(this.shortenPath(v.path))}</td>
+                <td>${v.line}</td>
+                <td title="${safeMessage}">${this.escapeHtml(this.truncate(v.message || '', 70))}</td>
+            `;
+            tbody.appendChild(tr);
+        });
     }
 
-    populateDependencies(files) {
+    renderDependencies() {
+        const files = this.jsonData.files || [];
+        const wrap = this.$('dependencies-panel-wrap');
+        const table = this.$('deps-table');
         const hasDeps = files.some(f => f.dependencies && (f.dependencies.fanOut > 0 || f.dependencies.fanIn > 0));
 
         if (!hasDeps) {
-            const panel = this.$('dependencies-panel');
-            if (panel) {
-                panel.innerHTML = `
-                    <p class="no-data">No external dependencies detected.</p>
-                    <p class="no-data-hint">Dependencies are shown when files import/include other files in your project.</p>
-                `;
-            }
+            if (table) table.classList.add('hidden');
+            this.renderEmptyState(
+                wrap,
+                'No dependencies detected',
+                'Dependencies show up when scanned files #include/import other files in the same project.'
+            );
             return;
         }
+        if (table) table.classList.remove('hidden');
+        this.clearEmptyState(wrap);
 
         const tbody = document.querySelector('#deps-table tbody');
         if (!tbody) return;
@@ -465,49 +521,57 @@ class CMADashboard {
             `;
             tbody.appendChild(tr);
         });
-
-        const loading = this.$('deps-loading');
-        if (loading) loading.classList.add('hidden');
     }
 
-    populateFiles(files) {
+    renderFiles() {
+        const files = this.jsonData.files || [];
+        this._allFiles = files;
+
         const tbody = document.querySelector('#files-table tbody');
         if (!tbody) return;
 
         if (files.length === 0) {
-            const panel = this.$('files-panel');
-            if (panel) panel.innerHTML = `<p class="no-data">No files analyzed.</p>`;
+            tbody.innerHTML = `<tr class="no-data"><td colspan="6">No files analyzed.</td></tr>`;
             return;
         }
 
         tbody.innerHTML = '';
-
         files.forEach(f => {
             const tr = document.createElement('tr');
+            tr.style.cursor = 'pointer';
             tr.innerHTML = `
                 <td>${this.escapeHtml(this.shortenPath(f.path))}</td>
                 <td>${this.formatNumber(f.totalLines || 0)}</td>
                 <td>${f.functionCount || 0}</td>
                 <td>${f.classCount || 0}</td>
                 <td>${f.cyclomaticComplexity || 0}</td>
-                <td>
-                    <button class="details-btn" data-path="${this.escapeHtml(f.path)}">Details</button>
-                </td>
+                <td>${f.todoCount || 0}</td>
             `;
+            tr.addEventListener('click', () => this.showFileDetails(f));
             tbody.appendChild(tr);
-        });
-
-        document.querySelectorAll('.details-btn').forEach(btn => {
-            btn.addEventListener('click', e => {
-                const path = e.target.getAttribute('data-path');
-                const fileMetrics = files.find(f => f.path === path);
-                this.showFileDetails(path, fileMetrics);
-            });
         });
     }
 
+    renderEmptyState(panelWrap, title, body) {
+        if (!panelWrap) return;
+        let el = panelWrap.querySelector('.panel-empty-state');
+        if (!el) {
+            el = document.createElement('div');
+            el.className = 'panel panel-empty-state empty-state';
+            panelWrap.appendChild(el);
+        }
+        el.innerHTML = `<p>${this.escapeHtml(title)}</p><p class="hint">${this.escapeHtml(body)}</p>`;
+        el.classList.remove('hidden');
+    }
+
+    clearEmptyState(panelWrap) {
+        if (!panelWrap) return;
+        const el = panelWrap.querySelector('.panel-empty-state');
+        if (el) el.classList.add('hidden');
+    }
+
     /* -----------------------------------------------------------------
-       File search
+       File search (Files tab)
        ----------------------------------------------------------------- */
     filterFiles(searchTerm) {
         const tbody = document.querySelector('#files-table tbody');
@@ -519,161 +583,81 @@ class CMADashboard {
         });
     }
 
-    showFileDetails(path, metrics) {
-        if (!metrics) return;
-        const details = `
-File: ${path}
+    /* -----------------------------------------------------------------
+       File detail slide-over
+       ----------------------------------------------------------------- */
+    showFileDetails(f) {
+        this.closeFileDetails();
 
-Lines: ${this.formatNumber(metrics.totalLines || 0)}
-Functions: ${metrics.functionCount || 0}
-Classes: ${metrics.classCount || 0}
-Cyclomatic Complexity: ${metrics.cyclomaticComplexity || 0}
-TODO count: ${metrics.todoCount || 0}
-Comment lines: ${this.formatNumber(metrics.commentLines || 0)}
-Blank lines: ${this.formatNumber(metrics.blankLines || 0)}
+        const overlay = document.createElement('div');
+        overlay.className = 'detail-overlay';
+        overlay.addEventListener('click', () => this.closeFileDetails());
+
+        const rows = [
+            ['Total lines', this.formatNumber(f.totalLines || 0)],
+            ['Blank lines', this.formatNumber(f.blankLines || 0)],
+            ['Comment lines', this.formatNumber(f.commentLines || 0)],
+            ['Code lines', this.formatNumber(f.codeLines || 0)],
+            ['Functions', f.functionCount || 0],
+            ['Classes', f.classCount || 0],
+            ['Variables', f.variableCount || 0],
+            ['Loops', f.loopCount || 0],
+            ['Conditions', f.conditionCount || 0],
+            ['Try/catch', f.tryCatchCount || 0],
+            ['Max nesting', f.maxNestingDepth || 0],
+            ['Cyclomatic complexity', f.cyclomaticComplexity || 0],
+            ['TODOs', f.todoCount || 0],
+        ];
+
+        const panel = document.createElement('div');
+        panel.className = 'detail-panel';
+        panel.innerHTML = `
+            <div class="detail-panel-head">
+                <div class="detail-panel-title">${this.escapeHtml(f.path)}</div>
+                <button class="detail-close" aria-label="Close">&times;</button>
+            </div>
+            ${rows
+                .map(
+                    ([label, value]) =>
+                        `<div class="detail-row"><span class="detail-row-label">${this.escapeHtml(label)}</span><span class="detail-row-value">${this.escapeHtml(value)}</span></div>`
+                )
+                .join('')}
         `;
-        alert(details.trim());
+        panel.querySelector('.detail-close').addEventListener('click', () => this.closeFileDetails());
+
+        const root = this.$('detail-root');
+        if (!root) return;
+        root.appendChild(overlay);
+        root.appendChild(panel);
+    }
+
+    closeFileDetails() {
+        const root = this.$('detail-root');
+        if (root) root.innerHTML = '';
     }
 
     /* -----------------------------------------------------------------
-       Streak / achievement logic
+       Streak
        ----------------------------------------------------------------- */
     updateStreak() {
         const today = new Date().toISOString().slice(0, 10);
         if (this.lastAnalysisDate !== today) {
             this.analysisStreak = this.lastAnalysisDate ? this.analysisStreak + 1 : 1;
             this.lastAnalysisDate = today;
-            localStorage.setItem('cma-last-analysis', today);
-            localStorage.setItem('cma-streak', this.analysisStreak);
+            localStorage.setItem('rs-last-analysis', today);
+            localStorage.setItem('rs-streak', String(this.analysisStreak));
         }
         this.updateStreakDisplay();
     }
 
     updateStreakDisplay() {
-        const streakMsg = this.$('streak-message');
-        const streakVis = this.$('streak-visual');
-        if (streakMsg && streakVis) {
-            streakMsg.textContent = `You've analysed code ${this.analysisStreak} ${this.analysisStreak === 1 ? 'day' : 'days'} in a row!`;
-            streakVis.textContent = '\u{1F525}'.repeat(Math.min(this.analysisStreak, 5));
+        const msg = this.$('streak-message');
+        const vis = this.$('streak-visual');
+        if (!msg || !vis) return;
+        if (this.analysisStreak > 0) {
+            msg.textContent = `You've analyzed code ${this.analysisStreak} ${this.analysisStreak === 1 ? 'day' : 'days'} in a row!`;
+            vis.textContent = '\u{1F525}'.repeat(Math.min(this.analysisStreak, 5));
         }
-    }
-
-    /* -----------------------------------------------------------------
-       Sound effects
-       ----------------------------------------------------------------- */
-    playSound(type) {
-        if (!this.soundEnabled) return;
-        const audioMap = { success: 'success-sound', error: 'error-sound', konami: 'konami-sound' };
-        const el = this.$(audioMap[type]);
-        if (el) {
-            el.currentTime = 0;
-            el.play().catch(() => {});
-        }
-    }
-
-    /* -----------------------------------------------------------------
-       Konami code easter egg
-       ----------------------------------------------------------------- */
-    playKonamiListener() {
-        const konami = [38, 38, 40, 40, 37, 39, 37, 39, 66, 65]; // up up down down left right left right B A
-        let index = 0;
-        window.addEventListener('keydown', e => {
-            const key = e.keyCode || e.which;
-            if (key === konami[index]) {
-                index++;
-                if (index === konami.length) {
-                    this.playSound('konami');
-                    alert('Konami code unlocked! You get a free coffee (virtually).');
-                    index = 0;
-                }
-            } else {
-                index = 0;
-            }
-        });
-    }
-
-    /* -----------------------------------------------------------------
-       Rotate loading message while waiting
-       ----------------------------------------------------------------- */
-    rotateLoadingMessage() {
-        setInterval(() => {
-            const msgEl = this.$('loading-message');
-            const loadingState = this.$('loading-state');
-            if (msgEl && loadingState && !loadingState.classList.contains('hidden')) {
-                msgEl.textContent = this.getRandomJoke();
-            }
-        }, 4000);
-    }
-
-    /* -----------------------------------------------------------------
-       Mini-game: typing speed test (shown while waiting)
-       ----------------------------------------------------------------- */
-    initTypingTest() {
-        const container = this.$('mini-game-container');
-        if (!container) return;
-        container.innerHTML = '';
-
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.placeholder = 'Type this: "the quick brown fox jumps over the lazy dog"';
-        input.style.width = '100%';
-        input.style.padding = '0.5rem';
-        input.style.marginTop = '0.5rem';
-
-        const result = document.createElement('div');
-        result.style.marginTop = '0.5rem';
-        result.style.fontSize = '0.9rem';
-
-        container.appendChild(input);
-        container.appendChild(result);
-
-        let startTime = null;
-        input.addEventListener('input', () => {
-            const target = 'the quick brown fox jumps over the lazy dog';
-            const value = input.value;
-            if (startTime === null && value.length > 0) startTime = Date.now();
-            if (value === target) {
-                const elapsed = (Date.now() - startTime) / 1000;
-                const wpm = Math.round((target.split(' ').length / elapsed) * 60);
-                result.textContent = `Done! ${wpm} WPM`;
-                input.disabled = true;
-            } else if (value.length > target.length) {
-                result.textContent = 'Too long - start over';
-                input.value = '';
-                startTime = null;
-            }
-        });
-    }
-
-    populateDevFact() {
-        const el = this.$('dev-fact');
-        if (el) el.textContent = this.getRandomFact();
-    }
-
-    /* -----------------------------------------------------------------
-       Helpers
-       ----------------------------------------------------------------- */
-    getRandomJoke() {
-        return this.devJokes[Math.floor(Math.random() * this.devJokes.length)];
-    }
-
-    getRandomFact() {
-        return this.devFacts[Math.floor(Math.random() * this.devFacts.length)];
-    }
-
-    shortenPath(path) {
-        if (!path) return '';
-        if (path.length <= 20) return path;
-        return '\u2026' + path.slice(-20);
-    }
-
-    truncate(str, len) {
-        if (!str) return '';
-        return str.length > len ? str.slice(0, len - 1) + '\u2026' : str;
-    }
-
-    formatNumber(num) {
-        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     }
 }
 
@@ -681,12 +665,9 @@ Blank lines: ${this.formatNumber(metrics.blankLines || 0)}
    Bootstrap
    ----------------------------------------------------------------- */
 document.addEventListener('DOMContentLoaded', () => {
-    window.cmaDashboard = new CMADashboard();
+    window.repoSightDashboard = new RepoSightDashboard();
 });
 
-/* -----------------------------------------------------------------
-   Export for testing
-   ----------------------------------------------------------------- */
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { CMADashboard };
+    module.exports = { RepoSightDashboard };
 }
