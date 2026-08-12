@@ -156,7 +156,11 @@ input {
 .nav-item.active svg {
   stroke: var(--accent);
 }
-
+.nav-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 .nav-item-count {
   margin-left: auto;
   font-family: var(--mono);
