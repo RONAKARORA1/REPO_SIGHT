@@ -7,18 +7,6 @@
 // `master`), runs the prebuilt CMA binary against it, and stores the
 // resulting report JSON in Supabase Storage under the `scans` bucket
 // (same bucket frontend/lib/storage.ts already uses) at `${scanId}.json`.
-//
-// This is intentionally synchronous: for a typical solo-dev repo the
-// whole thing (download + analyze) finishes in a few seconds, so we skip
-// building a job queue for the MVP. If you outgrow this (very large
-// repos, frequent timeouts), the next step is to make this endpoint just
-// enqueue work and have a separate worker do the analysis, with this
-// route immediately returning a QUEUED status instead.
-//
-// Root-level Vercel Serverless Function (classic (req, res) handler) --
-// deliberately NOT a Next.js app/api/*/route.ts, since this repo has no
-// working Next.js build yet. Vercel auto-detects any api/**/*.js file at
-// the project root as a function regardless of framework preset.
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -29,10 +17,25 @@ import { createClient } from "@supabase/supabase-js";
 
 const execFileAsync = promisify(execFile);
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-);
+// Lazy init -- if the env vars are missing/wrong, this throws INSIDE the
+// handler's try/catch (below) instead of crashing the whole module at
+// cold start. A crashed module returns Vercel's raw platform error page
+// (not JSON), which is what was breaking the frontend's res.json() call.
+let _supabase;
+function getSupabase() {
+  if (!_supabase) {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) {
+      throw new Error(
+        "Server misconfigured: SUPABASE_URL and/or SUPABASE_SERVICE_ROLE_KEY " +
+        "are not set for this environment in Vercel Project Settings."
+      );
+    }
+    _supabase = createClient(url, key);
+  }
+  return _supabase;
+}
 
 const CMA_BINARY = join(process.cwd(), "backend", "bin", "linux-x64-cma");
 const ANALYZE_TIMEOUT_MS = 45_000;
@@ -45,10 +48,6 @@ function parseGithubUrl(repoUrl) {
   return { owner: m[1], repo: m[2] };
 }
 
-/**
- * Tries `main` then `master`. Returns the branch name that worked, or
- * null if the repo couldn't be found on either.
- */
 async function downloadTarball(owner, repo, destTarPath) {
   for (const branch of ["main", "master"]) {
     const url = `https://codeload.github.com/${owner}/${repo}/tar.gz/refs/heads/${branch}`;
@@ -83,6 +82,8 @@ export default async function handler(req, res) {
   const reportPath = join(workDir, "report.json");
 
   try {
+    const supabase = getSupabase(); // throws clean Error if misconfigured
+
     await mkdir(srcDir, { recursive: true });
 
     const branch = await downloadTarball(parsed.owner, parsed.repo, tarPath);
