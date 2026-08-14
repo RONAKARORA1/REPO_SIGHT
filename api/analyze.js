@@ -7,7 +7,7 @@
 // `master`), runs the prebuilt CMA binary against it, and stores the
 // resulting report JSON in Supabase Storage under the `scans` bucket
 // (same bucket frontend/lib/storage.ts already uses) at `${scanId}.json`.
-
+import * as tar from "tar";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
