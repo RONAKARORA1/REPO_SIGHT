@@ -94,7 +94,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    await execFileAsync("tar", ["-xzf", tarPath, "-C", srcDir, "--strip-components=1"]);
+    await  tar.x({ file: tarPath, cwd: srcDir, strip: 1 });
 
     let cmaResult;
     try {
