@@ -202,6 +202,7 @@ export default async function handler(req, res) {
     }),
     OVERALL_TIMEOUT_MS
   );
+    res.status(result.status).json(result.body);
 } catch (err) {
   console.error("Analyze error:", err);
 
@@ -215,11 +216,8 @@ export default async function handler(req, res) {
     : err?.message || "Analysis failed.";
 
   res.status(500).json({ error: message });
-}
-  res.status(result.status).json(result.body);
-
-  finally {
-    await rm(workDir, { recursive: true, force: true }).catch(() => {});
-    await rm(tarPath, { force: true }).catch(() => {});
-  }
+    } finally {
+  await rm(workDir, { recursive: true, force: true }).catch(() => {});
+ await rm(tarPath, { force: true }).catch(() => {});
+ }
 }
