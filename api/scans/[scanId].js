@@ -6,6 +6,12 @@
 // (written by api/analyze.js) and returns it as-is.
 
 import { createClient } from "@supabase/supabase-js";
+// analyze.js only ever names scan objects with crypto.randomUUID() (v4).
+// Validating that shape here means this endpoint can only ever look up
+// keys that our own analyze step could have created -- it can't be used
+// to fetch arbitrary "<anything>.json" out of the scans bucket.
+const SCAN_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 
 let _supabase;
 function getSupabase() {
@@ -28,6 +34,10 @@ export default async function handler(req, res) {
 
   if (!scanId || typeof scanId !== "string") {
     res.status(400).json({ status: "FAILED", errorMessage: "Missing scan id." });
+    return;
+  }
+  if (!SCAN_ID_RE.test(scanId)) {
+    res.status(400).json({ status: "FAILED", errorMessage: "Invalid scan id." });
     return;
   }
 
