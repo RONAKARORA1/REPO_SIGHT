@@ -371,7 +371,7 @@ class RepoSightDashboard {
 
         const violations = this.jsonData.violations || [];
         const bySeverity = sev => violations.filter(v => v.severity === sev).length;
-        this.setText('count-critical', bySeverity('critical'));
+     
         this.setText('count-warning', bySeverity('warning'));
         this.setText('count-info', bySeverity('info'));
 
