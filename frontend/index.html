@@ -210,12 +210,14 @@
       <!-- Dependencies panel -->
       <div class="tab-panel" id="dependencies-panel-wrap">
         <div class="panel">
+          <div class="table-scroll">
           <table id="deps-table">
             <thead>
               <tr><th>File</th><th>Fan-out</th><th>Fan-in</th><th>Depends on</th><th>Depended on by</th></tr>
             </thead>
             <tbody></tbody>
           </table>
+          </div>
         </div>
       </div>
 
@@ -226,12 +228,14 @@
           <input type="text" id="file-search" placeholder="Search files..." />
         </div>
         <div class="panel">
+          <div class="table-scroll">
           <table id="files-table">
             <thead>
               <tr><th>File</th><th>Lines</th><th>Functions</th><th>Classes</th><th>Complexity</th><th>TODOs</th></tr>
             </thead>
             <tbody></tbody>
           </table>
+            </div>
         </div>
       </div>
     </section>
