@@ -38,7 +38,32 @@ function getSupabase() {
 }
 
 const CMA_BINARY = join(process.cwd(), "backend", "bin", "linux-x64-cma");
-const ANALYZE_TIMEOUT_MS = 45_000;
+
+// vercel.json caps this function at maxDuration: 10 (seconds).
+// Keep our own deadline below that limit so we can return a JSON error
+// before Vercel force-kills the function.
+const OVERALL_TIMEOUT_MS = 8_000;
+const CMA_TIMEOUT_MS = 7_000;
+
+class PipelineTimeoutError extends Error {}
+
+function withDeadline(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      const t = setTimeout(
+        () =>
+          reject(
+            new PipelineTimeoutError(
+              "Analysis pipeline exceeded its time budget"
+            )
+          ),
+        ms
+      );
+      t.unref?.();
+    }),
+  ]);
+}
 
 function parseGithubUrl(repoUrl) {
   const m = String(repoUrl || "")
@@ -60,7 +85,87 @@ async function downloadTarball(owner, repo, destTarPath) {
   }
   return null;
 }
+async function runPipeline({
+  parsed,
+  tarPath,
+  srcDir,
+  reportPath,
+  scanId,
+  supabase,
+}) {
+  const branch = await downloadTarball(
+    parsed.owner,
+    parsed.repo,
+    tarPath
+  );
 
+  if (!branch) {
+    return {
+      status: 404,
+      body: {
+        error: `Could not find "${parsed.owner}/${parsed.repo}" on GitHub (checked main and master). Make sure the repo is public.`,
+      },
+    };
+  }
+
+  await tar.x({
+    file: tarPath,
+    cwd: srcDir,
+    strip: 1,
+  });
+
+  let cmaResult;
+
+  try {
+    cmaResult = await execFileAsync(
+      CMA_BINARY,
+      [srcDir, "--json", reportPath],
+      {
+        timeout: CMA_TIMEOUT_MS,
+      }
+    );
+  } catch (cmaErr) {
+    const stderr = String(cmaErr?.stderr || "");
+
+    if (stderr.includes("No recognized source files found")) {
+      return {
+        status: 400,
+        body: {
+          error:
+            "No supported source files (C++, Python, or Java) found in this repository.",
+        },
+      };
+    }
+
+    throw cmaErr;
+  }
+
+  void cmaResult;
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+
+  const payload = {
+    status: "COMPLETED",
+    scanId,
+    projectName: `${parsed.owner}/${parsed.repo}`,
+    createdAt: new Date().toISOString(),
+    ...report,
+  };
+
+  const { error: uploadError } = await supabase.storage
+    .from("scans")
+    .upload(`${scanId}.json`, JSON.stringify(payload), {
+      contentType: "application/json",
+      upsert: true,
+    });
+
+  if (uploadError) throw uploadError;
+
+  return {
+    status: 200,
+    body: { scanId },
+  };
+}
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed. Use POST." });
@@ -82,64 +187,38 @@ export default async function handler(req, res) {
   const reportPath = join(workDir, "report.json");
 
   try {
-    const supabase = getSupabase(); // throws clean Error if misconfigured
+  const supabase = getSupabase();
 
-    await mkdir(srcDir, { recursive: true });
+  await mkdir(srcDir, { recursive: true });
 
-    const branch = await downloadTarball(parsed.owner, parsed.repo, tarPath);
-    if (!branch) {
-      res.status(404).json({
-        error: `Could not find "${parsed.owner}/${parsed.repo}" on GitHub (checked main and master). Make sure the repo is public.`,
-      });
-      return;
-    }
-
-    await  tar.x({ file: tarPath, cwd: srcDir, strip: 1 });
-
-    let cmaResult;
-    try {
-      cmaResult = await execFileAsync(CMA_BINARY, [srcDir, "--json", reportPath], {
-        timeout: ANALYZE_TIMEOUT_MS,
-      });
-    } catch (cmaErr) {
-      const stderr = String(cmaErr?.stderr || "");
-      if (stderr.includes("No recognized source files found")) {
-        res.status(400).json({
-          error: "No supported source files (C++, Python, or Java) found in this repository.",
-        });
-        return;
-      }
-      throw cmaErr;
-    }
-    void cmaResult;
-
-    const report = JSON.parse(await readFile(reportPath, "utf8"));
-
-    const payload = {
-      status: "COMPLETED",
+  const result = await withDeadline(
+    runPipeline({
+      parsed,
+      tarPath,
+      srcDir,
+      reportPath,
       scanId,
-      projectName: `${parsed.owner}/${parsed.repo}`,
-      createdAt: new Date().toISOString(),
-      ...report,
-    };
+      supabase,
+    }),
+    OVERALL_TIMEOUT_MS
+  );
+} catch (err) {
+  console.error("Analyze error:", err);
 
-    const { error: uploadError } = await supabase.storage
-      .from("scans")
-      .upload(`${scanId}.json`, JSON.stringify(payload), {
-        contentType: "application/json",
-        upsert: true,
-      });
-    if (uploadError) throw uploadError;
+  const timedOut =
+    err instanceof PipelineTimeoutError ||
+    err?.code === "ETIMEDOUT" ||
+    err?.killed;
 
-    res.status(200).json({ scanId });
-  } catch (err) {
-    console.error("Analyze error:", err);
-    const message =
-      err?.code === "ETIMEDOUT" || err?.killed
-        ? "Analysis timed out -- the repo may be too large for this endpoint's current limit."
-        : err?.message || "Analysis failed.";
-    res.status(500).json({ error: message });
-  } finally {
+  const message = timedOut
+    ? "Analysis timed out -- the repo may be too large for this endpoint's current limit."
+    : err?.message || "Analysis failed.";
+
+  res.status(500).json({ error: message });
+}
+  res.status(result.status).json(result.body);
+
+  finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
     await rm(tarPath, { force: true }).catch(() => {});
   }
