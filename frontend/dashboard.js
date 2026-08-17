@@ -6,7 +6,7 @@
    form, which POSTs to /api/analyze and redirects to ?scan=<id>.
    ========================================================================== */
 
-const GRADE_COLOR = { A: '#5eead4', B: '#5eead4', C: '#f5a524', D: '#f5a524', F: '#f97066' };
+const GRADE_COLOR = { A: '#1f6f5c', B: '#1f6f5c', C: '#b8791f', D: '#b8791f', F: '#a8402a' };
 const GAUGE_RADIUS = 54;
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS;
 const LONG_FUNCTION_THRESHOLD = 100; // matches cpp/py/java-long-*-function rule
