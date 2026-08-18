@@ -3,10 +3,231 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>repo-sight — Analysis Report</title>
+  <title>REPO-SIGHT — Know your codebase before you ship it</title>
+  <meta name="description" content="REPO-SIGHT reads your C++, Python, or Java repository and reports the numbers that matter — size, structure, complexity, and rule violations. Paste a public GitHub URL, no signup required." />
   <link rel="stylesheet" href="css/styles.css" />
+  <!-- AdSense loader -- publisher ID matches the repo's ads.txt (ca-pub-9491664802154422).
+       Safe to ship before the account is approved/units exist; it just won't render anything
+       until then. See the .ad-slot placeholder in index.html for where a unit would go. -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9491664802154422" crossorigin="anonymous"></script>
 </head>
 <body>
+  <!-- ==================================================================
+       Landing page (shown when the URL has no ?scan= param). Static
+       markup rather than a JS-injected template so the marketing copy
+       is crawlable. dashboard.js#renderLandingPage() unhides this block
+       and hides the sidebar/dashboard shell below; the reverse happens
+       automatically since #landing-page starts hidden and the dashboard
+       shell is what ?scan= URLs render into.
+       ================================================================== -->
+  <div id="landing-page" class="hidden">
+    <header class="site-header">
+      <div class="site-header-inner">
+        <a class="brand" href="/">
+          <span class="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13 2L4 14h6l-1 8 9-12h-6z" />
+            </svg>
+          </span>
+          <span class="brand-name">REPO-SIGHT<span class="brand-cursor" aria-hidden="true"></span></span>
+        </a>
+        <nav class="site-nav">
+          <a href="#pipeline">How it works</a>
+          <a href="#features">What you get</a>
+          <a href="https://github.com/RONAKARORA1/REPO_SIGHT" target="_blank" rel="noopener">GitHub</a>
+        </nav>
+        <a href="#analyze" class="btn-primary btn-nav-cta">Analyze a repo</a>
+      </div>
+    </header>
+
+    <!-- Hero -->
+    <section class="hero" id="analyze">
+      <div class="hero-inner">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="eyebrow-dot"></span>FREE &middot; NO SIGNUP &middot; RESULTS IN SECONDS<span class="token-pill token-pill-inline">IDENTIFIER</span></p>
+          <h1>
+            Know your codebase
+            <span class="hero-underline">before you ship it</span>.
+          </h1>
+          <p class="hero-sub">
+            Paste a public GitHub URL and REPO-SIGHT reads the source straight from the repo &mdash;
+            size, structure, complexity, technical debt, and rule violations, across C++, Python, and Java.
+          </p>
+
+          <form id="new-scan-form" class="hero-form">
+            <input type="text" id="new-scan-url" placeholder="https://github.com/owner/repo" autocomplete="off" />
+            <button type="submit" class="btn-primary" id="new-scan-submit">Analyze</button>
+          </form>
+          <p class="new-scan-error hidden" id="new-scan-error"></p>
+          <p class="hero-fineprint">Public repositories only &middot; runs the CMA analysis engine &middot; no account needed</p>
+        </div>
+
+        <div class="hero-terminal" aria-hidden="true">
+          <div class="terminal-chrome">
+            <span class="dot dot-1"></span><span class="dot dot-2"></span><span class="dot dot-3"></span>
+            <span class="terminal-title">cma . --json report.json</span>
+          </div>
+          <pre class="terminal-body">====================================
+<span class="t-strong">CODE METRICS REPORT</span>
+====================================
+Files Analyzed        : <span class="t-value">14</span>
+Total Lines            : <span class="t-value">2,850</span>
+Functions              : <span class="t-value">65</span>
+Classes                : <span class="t-value">12</span>
+Cyclomatic Complexity  : <span class="t-value">137</span>
+Longest Function       : <span class="t-accent">processOrder()</span> &middot; 78 lines
+TODO Comments          : <span class="t-value">9</span>
+====================================</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pipeline -->
+    <section class="pipeline" id="pipeline">
+      <p class="eyebrow"><span class="eyebrow-dot"></span>THE PIPELINE<span class="token-pill token-pill-inline">PREPROCESSOR</span></p>
+      <h2>Five stages. One pass. No black box.</h2>
+      <p class="section-sub">
+        Every file goes through the same deterministic pipeline &mdash; the same one the
+        <code>cma</code> binary runs on the command line.
+      </p>
+      <div class="pipeline-grid">
+        <div class="pipeline-card">
+          <span class="pipeline-num">01</span>
+          <h3>Scan</h3>
+          <p>Finds every recognized source file &mdash; .cpp/.h, .py, .java &mdash; in a repo, a folder, or a single file.</p>
+        </div>
+        <div class="pipeline-card">
+          <span class="pipeline-num">02</span>
+          <h3>Lex</h3>
+          <p>Character-level tokenizer per language. Keywords, identifiers, literals, operators &mdash; no regex, no compiler.</p>
+        </div>
+        <div class="pipeline-card">
+          <span class="pipeline-num">03</span>
+          <h3>Parse</h3>
+          <p>Walks the token stream to find functions, classes, nesting depth, and cyclomatic complexity.</p>
+        </div>
+        <div class="pipeline-card">
+          <span class="pipeline-num">04</span>
+          <h3>Aggregate</h3>
+          <p>Per-file metrics and rule violations roll up into one project-level report and health score.</p>
+        </div>
+        <div class="pipeline-card">
+          <span class="pipeline-num">05</span>
+          <h3>Report</h3>
+          <p>A dashboard you can read, filter, and share &mdash; never a black box.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="ad-slot" data-ad-region="mid-page" aria-label="Advertisement">
+      <!--
+        AdSense placeholder. ads.txt + the loader script in <head> already
+        point at the real publisher (ca-pub-9491664802154422). To go
+        live: create an ad unit in the AdSense dashboard, then replace
+        this comment with:
+          <ins class="adsbygoogle" style="display:block"
+               data-ad-client="ca-pub-9491664802154422"
+               data-ad-slot="YOUR_AD_SLOT_ID"
+               data-ad-format="auto" data-full-width-responsive="true"></ins>
+        and call (adsbygoogle = window.adsbygoogle || []).push({}) once
+        per unit. Left empty (not a live tag) since no slot ID exists
+        yet -- an <ins> without one throws in the AdSense console.
+      -->
+      <span class="ad-slot-label">Advertisement</span>
+    </div>
+
+    <!-- Features -->
+    <section class="features" id="features">
+      <p class="eyebrow"><span class="eyebrow-dot"></span>WHAT YOU GET<span class="token-pill token-pill-inline">STRING_LITERAL</span></p>
+      <h2>Every metric the engine computes &mdash; one dashboard.</h2>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon feature-icon-a">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16M4 4h4v4H4zM10 10h4v10h-4zM16 6h4v14h-4z"/></svg>
+          </div>
+          <h3>Size &amp; shape</h3>
+          <p>Total lines, blank lines, comment lines, and real code lines &mdash; split out, not lumped together.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon feature-icon-b">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 4.5-9 4.5-9-4.5L12 3zM3 12l9 4.5 9-4.5M3 16.5L12 21l9-4.5"/></svg>
+          </div>
+          <h3>Structure</h3>
+          <p>Functions, classes/structs, variables, and include/import counts, per file and rolled up.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon feature-icon-c">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>
+          </div>
+          <h3>Complexity</h3>
+          <p>Cyclomatic complexity, max nesting depth, loops and conditions, and your longest function.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon feature-icon-d">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+          </div>
+          <h3>Technical debt</h3>
+          <p>Every TODO and FIXME marker, counted &mdash; so nothing quietly rots in a comment.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon feature-icon-e">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6l-2-2M16 6l2-2M12 7v2M9 9h6a3 3 0 013 3v3a6 6 0 01-12 0v-3a3 3 0 013-3z"/></svg>
+          </div>
+          <h3>Rule violations</h3>
+          <p>21 rules across C++, Python, and Java flag risky patterns, filed by severity and file.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon feature-icon-f">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a3 3 0 100-6 3 3 0 000 6zM6 15a3 3 0 100-6 3 3 0 000 6zM18 22a3 3 0 100-6 3 3 0 000 6zM8.6 13.5l6.8-3.9M8.6 10.5l6.8 3.9"/></svg>
+          </div>
+          <h3>Shareable reports</h3>
+          <p>Every scan gets its own link &mdash; open it, bookmark it, or send it along. No login required.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA band -->
+    <section class="cta-band">
+      <div class="cta-band-inner">
+        <div>
+          <p class="eyebrow eyebrow-invert"><span class="eyebrow-dot"></span>FREE, FOR NOW AND FOR REAL</p>
+          <h2>Free is the whole plan.</h2>
+          <p>No tiers, no paywalled metrics. A small amount of advertising keeps it free instead of a paywall &mdash; analyze without an account any time.</p>
+        </div>
+        <a href="#analyze" class="btn-primary btn-cta-band">Analyze a repo now</a>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <div class="site-footer-inner">
+        <div class="footer-brand">
+          <div class="brand">
+            <span class="brand-mark">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h6l-1 8 9-12h-6z" /></svg>
+            </span>
+            <span class="brand-name">REPO-SIGHT</span>
+          </div>
+          <p>A free code metrics analyzer for C++, Python, and Java. Built for students, job seekers, and indie devs.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <a href="#analyze">Analyze a repo</a>
+          <a href="#pipeline">How it works</a>
+          <a href="#features">What you get</a>
+        </div>
+        <div class="footer-col">
+          <h4>Resources</h4>
+          <a href="https://github.com/RONAKARORA1/REPO_SIGHT" target="_blank" rel="noopener">Source on GitHub</a>
+          <a href="https://github.com/RONAKARORA1/REPO_SIGHT/issues" target="_blank" rel="noopener">Report an issue</a>
+        </div>
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <a href="https://github.com/RONAKARORA1/REPO_SIGHT/blob/main/LICENSE" target="_blank" rel="noopener">Apache 2.0 License</a>
+        </div>
+      </div>
+    </footer>
+  </div>
+
   <!-- Sidebar -->
   <aside class="sidebar">
     <div class="sidebar-brand">
