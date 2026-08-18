@@ -154,7 +154,7 @@ class RepoSightDashboard {
     loadReport() {
         const scanId = new URLSearchParams(window.location.search).get('scan');
         if (!scanId) {
-            this.renderNewScanForm();
+            this.renderLandingPage();
             return;
         }
 
@@ -233,28 +233,31 @@ class RepoSightDashboard {
     }
 
     /* -----------------------------------------------------------------
-       New-scan form (no ?scan= in the URL)
+       Landing page (no ?scan= in the URL) -- the marketing homepage is
+       static markup already sitting in index.html as #landing-page, so
+       this just swaps it in for the dashboard shell and wires the hero
+       form's submit handler. (Previously this built the form via an
+       innerHTML template dropped into #loading-state, which also meant
+       the full sidebar + empty dashboard nav rendered behind a bare
+       "Analyze a GitHub repository" prompt -- not a real homepage.)
        ----------------------------------------------------------------- */
-    renderNewScanForm() {
-        const loadingState = this.$('loading-state');
-        if (!loadingState) return;
+    renderLandingPage() {
+        document.body.classList.add('landing-mode');
 
-        loadingState.innerHTML = `
-            <div class="new-scan-panel">
-                <h2>Analyze a GitHub repository</h2>
-                <p>Paste a public repo URL to scan it for complexity, hotspots, and rule violations.</p>
-                <form id="new-scan-form">
-                    <input type="text" id="new-scan-url" placeholder="https://github.com/owner/repo" autocomplete="off" />
-                    <button type="submit" class="btn-primary" id="new-scan-submit">Analyze</button>
-                </form>
-                <p class="new-scan-error hidden" id="new-scan-error"></p>
-            </div>
-        `;
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar) sidebar.classList.add('hidden');
+
+        const dashboardMain = document.querySelector('body > main');
+        if (dashboardMain) dashboardMain.classList.add('hidden');
+
+        const landing = this.$('landing-page');
+        if (landing) landing.classList.remove('hidden');
 
         const form = this.$('new-scan-form');
         const urlInput = this.$('new-scan-url');
         const submitBtn = this.$('new-scan-submit');
         const errorEl = this.$('new-scan-error');
+        if (!form || !urlInput || !submitBtn || !errorEl) return;
 
         form.addEventListener('submit', async e => {
             e.preventDefault();
@@ -347,6 +350,9 @@ class RepoSightDashboard {
 
     updateSidebarMeta() {
         const project = this.jsonData.project || {};
+        if (this.meta.projectName) {
+            document.title = `${this.meta.projectName} \u2014 REPO-SIGHT`;
+        }
         this.setText('sidebar-project', this.meta.projectName || '\u2014');
         this.setText('sidebar-scan', this.meta.scanId ? `scan ${this.meta.scanId.slice(0, 8)}` : '');
         this.setText(
