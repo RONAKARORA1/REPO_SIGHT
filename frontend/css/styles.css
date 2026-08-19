@@ -3,9 +3,9 @@
    Warm cream/paper base with a forest-green / amber / brick accent system,
    Fraunces serif for display type over IBM Plex Sans + Mono. Severity maps
    directly onto the palette's own semantics: amber = warning, brick =
-   critical/error, forest green = healthy. A grid-paper texture and a
-   perforated "tear-rule" divider carry the physical-report metaphor that
-   the dark ledger-ink theme did with terminal/ink-stamp motifs instead.
+   critical/error, forest green = healthy.
+   MVP v1: a single Overview report (no tab navigation), so the dashboard
+   shell is a topbar rather than a side-by-side sidebar + main layout.
    bg #E7ECE6 · surface #F5F7F3 · raised #FFFFFF · border #C4CCC1
    text-primary #15201B · text-muted #48564D · text-faint #7C8A80
    accent (health/forest) #1F6F5C · critical (brick) #A8402A · warning (amber) #B8791F · info (slate) #3E6E8E
@@ -43,9 +43,8 @@
   --shadow-sm: 0 1px 2px rgba(21, 32, 27, 0.06), 0 4px 10px -4px rgba(21, 32, 27, 0.08);
 }
 
-/* Grid-paper texture — the same device the reference site uses for its
-   page background, at the same low opacity so it stays out of the way
-   of dense tables. */
+/* Grid-paper texture, at a low opacity so it stays out of the way of
+   dense content. */
 body {
   background-color: var(--bg);
   background-image: linear-gradient(rgba(21, 32, 27, 0.035) 1px, transparent 1px),
@@ -61,8 +60,8 @@ body {
   }
 }
 
-/* Perforated "tear-rule" divider — the report's own torn-edge motif,
-   used between the summary cards and the rest of the panel. */
+/* Perforated "tear-rule" divider, used between the summary cards and the
+   rest of the panel. */
 .tear-rule {
   height: 14px;
   background-image: repeating-linear-gradient(90deg, var(--text-ghost) 0 12px, transparent 12px 20px);
@@ -80,16 +79,12 @@ body {
 
 html,
 body {
-  height: 100%;
+  min-height: 100%;
   background: var(--bg);
   color: var(--text-primary);
   font-family: var(--sans);
   font-size: 14px;
   line-height: 1.5;
-}
-
-body {
-  display: flex;
 }
 
 .hidden {
@@ -107,135 +102,82 @@ input {
 }
 
 /* ==========================================================================
-   Sidebar
+   Dashboard topbar
    ========================================================================== */
 
-.sidebar {
-  width: 224px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  padding: 18px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  height: 100vh;
+.dash-topbar {
   position: sticky;
   top: 0;
-  overflow-y: auto;
-}
-
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px 18px;
-}
-
-.sidebar-brand-mark {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-  background: var(--text-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: var(--shadow-xs);
-}
-
-.sidebar-brand-mark svg {
-  width: 13px;
-  height: 13px;
-  stroke: var(--bg-raised);
-}
-
-.sidebar-brand-name {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: -0.2px;
-  white-space: nowrap;
-}
-
-.sidebar-section-label {
-  font-size: 10.5px;
-  color: var(--text-ghost);
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  padding: 6px 12px 2px;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
-  padding: 8px 12px;
-  border-radius: 7px;
-  border: none;
-  border-left: 2px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 13.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s ease;
-}
-
-.nav-item:hover {
-  background: rgba(21, 32, 27, 0.05);
-}
-
-.nav-item.active {
+  z-index: 30;
   background: var(--bg-raised);
-  border-left-color: var(--accent);
-  color: var(--text-primary);
-  font-weight: 600;
+  border-bottom: 1px solid var(--border);
 }
 
-.nav-item svg {
-  width: 15px;
-  height: 15px;
-  stroke: currentColor;
+.dash-topbar-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 14px 32px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+
+.dash-topbar .brand {
+  margin-right: 0;
   flex-shrink: 0;
 }
 
-.nav-item.active svg {
-  stroke: var(--accent);
-}
-.nav-item.disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-.nav-item-count {
-  margin-left: auto;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-faint);
+.dash-meta {
+  margin-right: auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.sidebar-footer {
-  margin-top: auto;
-  padding: 10px 12px;
-  border-top: 1px solid var(--border);
-}
-
-.sidebar-footer-project {
-  font-size: 11.5px;
-  color: var(--text-faint);
+.dash-meta-project {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 320px;
 }
 
-.sidebar-footer-scan {
+.dash-meta-scan {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--text-ghost);
-  margin-top: 2px;
+  color: var(--text-faint);
+}
+
+.dash-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.btn-ghost {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-ghost:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 
 /* ==========================================================================
@@ -243,16 +185,12 @@ input {
    ========================================================================== */
 
 main {
-  flex: 1;
-  min-width: 0;
-  padding: 24px 32px;
-  overflow-x: auto;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 32px 64px;
 }
 
 .page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   margin-bottom: 24px;
 }
 
@@ -357,67 +295,6 @@ main {
   font-size: 13px;
 }
 
-/* ==========================================================================
-   New scan form (shown when the URL has no ?scan= param)
-   ========================================================================== */
-
-.new-scan-panel {
-  max-width: 440px;
-  margin: 0 auto;
-  text-align: center;
-}
-
-.new-scan-panel h2 {
-  font-size: 16px;
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-
-.new-scan-panel > p {
-  color: var(--text-muted);
-  font-size: 13px;
-  margin-bottom: 20px;
-}
-
-#new-scan-form {
-  display: flex;
-  gap: 8px;
-}
-
-#new-scan-url {
-  flex: 1;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 9px 12px;
-  color: var(--text-primary);
-  font-size: 13px;
-  outline: none;
-}
-
-#new-scan-url:focus {
-  border-color: var(--accent);
-}
-
-#new-scan-url::placeholder {
-  color: var(--text-faint);
-  font-family: var(--mono);
-}
-
-#new-scan-submit {
-  white-space: nowrap;
-}
-
-#new-scan-submit:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.new-scan-error {
-  color: var(--critical);
-  font-size: 12.5px;
-  margin-top: 12px;
-}
 /* ==========================================================================
    Overview panel
    ========================================================================== */
@@ -569,10 +446,9 @@ main {
   color: var(--text-primary);
 }
 
-/* Icon chip — small colored container for a stat's icon, matching the
-   reference site's feature-card treatment. Default = accent(forest);
-   .amber = complexity metrics; .brick = technical-debt metrics (TODOs) —
-   the same category mapping the reference itself uses. */
+/* Icon chip — small colored container for a stat's icon. Default =
+   accent(forest); .amber = complexity metrics; .brick = technical-debt
+   metrics (TODOs). */
 .icon-chip {
   width: 26px;
   height: 26px;
@@ -652,305 +528,49 @@ main {
 }
 
 /* ==========================================================================
-   Tables
+   Metric panels (Size & shape / Structure / Complexity detail) — same
+   project-level fields the engine returns, laid out as small label+value
+   pairs rather than another full stat-card row.
    ========================================================================== */
-.table-scroll {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.table-scroll table {
-  min-width: 640px;
+
+.metric-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
+.metric-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 14px;
+  padding: 16px;
 }
 
-th {
-  text-align: left;
-  font-size: 11px;
-  color: var(--text-faint);
+.metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.metric-value {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.metric-label {
+  font-size: 10.5px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  font-weight: 600;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-strong);
-  white-space: nowrap;
-}
-
-td {
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 13px;
-}
-
-tbody tr:nth-child(even) td {
-  background: rgba(21, 32, 27, 0.015);
-}
-
-tbody tr:hover td {
-  background: var(--accent-dim);
-}
-
-tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.mono {
-  font-family: var(--mono);
-}
-
-.text-muted {
-  color: var(--text-muted);
-}
-
-.text-faint {
-  color: var(--text-faint);
-}
-
-tr.no-data td,
-.empty-state {
-  text-align: center;
-  padding: 40px 20px;
-  color: var(--text-faint);
-}
-
-.empty-state svg {
-  width: 28px;
-  height: 28px;
-  stroke: var(--text-ghost);
-  margin-bottom: 10px;
-}
-
-.empty-state p {
-  font-size: 13px;
-}
-
-.empty-state .hint {
-  font-size: 12px;
-  margin-top: 4px;
-  color: var(--text-ghost);
-}
-
-/* ==========================================================================
-   Severity pills / lang tags
-   ========================================================================== */
-
-.severity-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 20px;
-  padding: 3px 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  font-family: var(--mono);
-}
-
-.severity-pill::before {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.severity-pill.severity-warning {
-  color: var(--warning-ink);
-  background: var(--warning-dim);
-  border: 1px solid var(--warning);
-}
-
-.severity-pill.severity-info {
-  color: var(--info-ink);
-  background: var(--info-dim);
-  border: 1px solid var(--info);
-}
-
-.lang-tag {
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 2px 8px;
-  font-family: var(--mono);
-  margin-left: 6px;
-}
-
-/* ==========================================================================
-   Filters / search / hotspot bars
-   ========================================================================== */
-
-.filter-bar {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-
-.search-wrap {
-  position: relative;
-  flex: 1;
-  min-width: 200px;
-}
-
-.search-wrap svg {
-  position: absolute;
-  left: 10px;
-  top: 9px;
-  width: 14px;
-  height: 14px;
-  stroke: var(--text-faint);
-  pointer-events: none;
-}
-
-.search-wrap input {
-  width: 100%;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 8px 10px 8px 32px;
-  color: var(--text-primary);
-  font-size: 13px;
-  outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.search-wrap input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-dim);
-}
-
-.search-wrap input::placeholder {
-  color: var(--text-faint);
-}
-
-.filter-btn {
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  border-radius: 7px;
-  padding: 7px 12px;
-  font-size: 12.5px;
-  cursor: pointer;
-  text-transform: capitalize;
-}
-
-.filter-btn.active {
-  background: var(--accent-dim);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-  font-weight: 600;
-}
-
-.filter-select {
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  color: var(--text-muted);
-  padding: 7px 10px;
-  font-size: 12.5px;
-}
-
-.hotspot-bar-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hotspot-bar-track {
-  width: 70px;
-  height: 5px;
-  background: var(--border-subtle);
-  border-radius: 3px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.hotspot-bar-fill {
-  height: 100%;
-}
-
-.formula {
-  font-family: var(--mono);
-  font-size: 11.5px;
   color: var(--text-faint);
 }
 
 /* ==========================================================================
-   File detail slide-over
-   ========================================================================== */
-
-.detail-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 40;
-}
-
-.detail-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 380px;
-  max-width: 90vw;
-  background: var(--bg-raised);
-  border-left: 1px solid var(--border);
-  z-index: 41;
-  padding: 20px;
-  overflow-y: auto;
-  box-shadow: -8px 0 24px rgba(21, 32, 27, 0.1);
-}
-
-.detail-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.detail-panel-title {
-  font-family: var(--mono);
-  font-size: 14px;
-  font-weight: 600;
-  word-break: break-all;
-}
-
-.detail-close {
-  background: none;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-  padding: 4px;
-}
-
-.detail-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 13px;
-}
-
-.detail-row-label {
-  color: var(--text-muted);
-}
-
-.detail-row-value {
-  font-family: var(--mono);
-  color: var(--text-primary);
-}
-
-/* ==========================================================================
-   Streak / footer strip
+   Streak strip
    ========================================================================== */
 
 .streak-strip {
@@ -976,58 +596,12 @@ tr.no-data td,
 }
 
 /* ==========================================================================
-   Responsive
-   ========================================================================== */
-
-@media (max-width: 860px) {
-  body:not(.landing-mode) {
-    flex-direction: column;
-  }
-
-  .sidebar {
-    width: 100%;
-    height: auto;
-    position: static;
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 10px;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .sidebar-brand,
-  .sidebar-section-label,
-  .sidebar-footer {
-    display: none;
-  }
-
-  .nav-item {
-    flex-shrink: 0;
-    width: auto;
-  }
-
-  main {
-    padding: 16px;
-  }
-
-  .overview-top {
-    flex-direction: column;
-  }
-}
-
-/* ==========================================================================
    Landing page
    Marketing homepage shown when the URL has no ?scan= param. Same paper/
    forest-green tokens as the dashboard (bg #E7ECE6, accent #1F6F5C,
    Fraunces + IBM Plex) so the jump from homepage into a report never
-   feels like a different product. body.landing-mode drops the flex row
-   that normally seats the sidebar next to <main>, since the sidebar and
-   dashboard <main> are both hidden while this is showing.
+   feels like a different product.
    ========================================================================== */
-
-body.landing-mode {
-  display: block;
-}
 
 #landing-page {
   width: 100%;
@@ -1261,6 +835,12 @@ body.landing-mode {
   font-size: 14px;
 }
 
+.new-scan-error {
+  color: var(--critical);
+  font-size: 12.5px;
+  margin-top: 12px;
+}
+
 .hero-fineprint {
   font-size: 12px;
   color: var(--text-ghost);
@@ -1491,7 +1071,7 @@ body.landing-mode {
 }
 
 /* ---------------------------------------------------------------------- */
-/* CTA band + footer -- the report's own "ink" end of the page             */
+/* CTA band + footer                                                       */
 /* ---------------------------------------------------------------------- */
 
 .cta-band {
@@ -1540,7 +1120,7 @@ body.landing-mode {
   max-width: 1180px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+  grid-template-columns: 1.6fr 1fr 1fr;
   gap: 32px;
 }
 
@@ -1575,7 +1155,8 @@ body.landing-mode {
   margin-bottom: 12px;
 }
 
-.footer-col a {
+.footer-col a,
+.footer-col .footer-static {
   display: block;
   font-size: 13px;
   color: rgba(231, 236, 230, 0.72);
@@ -1608,12 +1189,26 @@ body.landing-mode {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .metric-panel-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .site-footer-inner {
-    grid-template-columns: 1.4fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 
   .footer-brand {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 860px) {
+  .overview-top {
+    flex-direction: column;
+  }
+
+  main {
+    padding: 16px;
   }
 }
 
@@ -1624,6 +1219,21 @@ body.landing-mode {
 
   .site-nav {
     display: none;
+  }
+
+  .dash-topbar-inner {
+    padding: 12px 18px;
+  }
+
+  .dash-actions {
+    width: 100%;
+  }
+
+  .dash-actions .btn-ghost,
+  .dash-actions .btn-primary {
+    flex: 1;
+    justify-content: center;
+    text-align: center;
   }
 
   .hero {
@@ -1645,7 +1255,8 @@ body.landing-mode {
   }
 
   .pipeline-grid,
-  .features-grid {
+  .features-grid,
+  .metric-panel-grid {
     grid-template-columns: 1fr;
   }
 
