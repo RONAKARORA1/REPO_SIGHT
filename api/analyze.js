@@ -39,11 +39,15 @@ function getSupabase() {
 
 const CMA_BINARY = join(process.cwd(), "backend", "bin", "linux-x64-cma");
 
-// vercel.json caps this function at maxDuration: 10 (seconds).
-// Keep our own deadline below that limit so we can return a JSON error
-// before Vercel force-kills the function.
-const OVERALL_TIMEOUT_MS = 8_000;
-const CMA_TIMEOUT_MS = 7_000;
+// vercel.json caps this function at maxDuration: 60 (seconds). Keep our
+// own deadline a few seconds under that so we can still return a JSON
+// error before Vercel force-kills the function outright (a hard kill
+// returns Vercel's platform 504 page, not JSON -- see the comment on
+// getSupabase() above for why that matters to the frontend).
+// Budget: ~10s for tarball download/extract/upload, ~45s for the CMA
+// binary itself, ~5s slack.
+const OVERALL_TIMEOUT_MS = 55_000;
+const CMA_TIMEOUT_MS = 45_000;
 
 class PipelineTimeoutError extends Error {}
 
@@ -212,7 +216,7 @@ export default async function handler(req, res) {
     err?.killed;
 
   const message = timedOut
-    ? "Analysis timed out -- the repo may be too large for this endpoint's current limit."
+    ? "Analysis timed out -- this repo is too large to finish within the current ~55s analysis window. Try a smaller repo, or a subdirectory of this one."
     : err?.message || "Analysis failed.";
 
   res.status(500).json({ error: message });
