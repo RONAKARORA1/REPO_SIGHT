@@ -16,7 +16,7 @@
        Landing page (shown when the URL has no ?scan= param). Static
        markup rather than a JS-injected template so the marketing copy
        is crawlable. dashboard.js#renderLandingPage() unhides this block
-       and hides the sidebar/dashboard shell below; the reverse happens
+       and hides the dashboard shell below; the reverse happens
        automatically since #landing-page starts hidden and the dashboard
        shell is what ?scan= URLs render into.
        ================================================================== -->
@@ -34,7 +34,6 @@
         <nav class="site-nav">
           <a href="#pipeline">How it works</a>
           <a href="#features">What you get</a>
-          <a href="https://github.com/RONAKARORA1/REPO_SIGHT" target="_blank" rel="noopener">GitHub</a>
         </nav>
         <a href="#analyze" class="btn-primary btn-nav-cta">Analyze a repo</a>
       </div>
@@ -59,7 +58,7 @@
             <button type="submit" class="btn-primary" id="new-scan-submit">Analyze</button>
           </form>
           <p class="new-scan-error hidden" id="new-scan-error"></p>
-          <p class="hero-fineprint">Public repositories only &middot; runs the CMA analysis engine &middot; no account needed</p>
+          <p class="hero-fineprint">Public repositories only &middot; best for repos that analyze in under a minute &middot; no account needed</p>
         </div>
 
         <div class="hero-terminal" aria-hidden="true">
@@ -114,7 +113,7 @@ TODO Comments          : <span class="t-value">9</span>
         <div class="pipeline-card">
           <span class="pipeline-num">05</span>
           <h3>Report</h3>
-          <p>A dashboard you can read, filter, and share &mdash; never a black box.</p>
+          <p>A dashboard you can read and share &mdash; never a black box.</p>
         </div>
       </div>
     </section>
@@ -153,7 +152,7 @@ TODO Comments          : <span class="t-value">9</span>
             <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 4.5-9 4.5-9-4.5L12 3zM3 12l9 4.5 9-4.5M3 16.5L12 21l9-4.5"/></svg>
           </div>
           <h3>Structure</h3>
-          <p>Functions, classes/structs, variables, and include/import counts, per file and rolled up.</p>
+          <p>Functions, classes/structs, variables, and include/import counts, rolled up project-wide.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon feature-icon-c">
@@ -174,7 +173,7 @@ TODO Comments          : <span class="t-value">9</span>
             <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6l-2-2M16 6l2-2M12 7v2M9 9h6a3 3 0 013 3v3a6 6 0 01-12 0v-3a3 3 0 013-3z"/></svg>
           </div>
           <h3>Rule violations</h3>
-          <p>21 rules across C++, Python, and Java flag risky patterns, filed by severity and file.</p>
+          <p>21 rules across C++, Python, and Java flag risky patterns, rolled up by severity.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon feature-icon-f">
@@ -216,71 +215,39 @@ TODO Comments          : <span class="t-value">9</span>
           <a href="#features">What you get</a>
         </div>
         <div class="footer-col">
-          <h4>Resources</h4>
-          <a href="https://github.com/RONAKARORA1/REPO_SIGHT" target="_blank" rel="noopener">Source on GitHub</a>
-          <a href="https://github.com/RONAKARORA1/REPO_SIGHT/issues" target="_blank" rel="noopener">Report an issue</a>
-        </div>
-        <div class="footer-col">
           <h4>Legal</h4>
-          <a href="https://github.com/RONAKARORA1/REPO_SIGHT/blob/main/LICENSE" target="_blank" rel="noopener">Apache 2.0 License</a>
+          <span class="footer-static">Apache 2.0 License</span>
         </div>
       </div>
     </footer>
   </div>
 
-  <!-- Sidebar -->
-  <aside class="sidebar">
-    <div class="sidebar-brand">
-      <div class="sidebar-brand-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M13 2L4 14h6l-1 8 9-12h-6z" />
-        </svg>
+  <!-- ==================================================================
+       Dashboard shell (shown when the URL has ?scan=<id>). A single
+       Overview report -- no tab navigation -- so the topbar only needs
+       to carry the brand, which scan is showing, and the two actions
+       (start a different scan, or re-run this one).
+       ================================================================== -->
+  <header class="dash-topbar">
+    <div class="dash-topbar-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 2L4 14h6l-1 8 9-12h-6z" />
+          </svg>
+        </span>
+        <span class="brand-name">REPO-SIGHT</span>
+      </a>
+      <div class="dash-meta">
+        <span class="dash-meta-project" id="dash-project">—</span>
+        <span class="dash-meta-scan" id="dash-scan"></span>
       </div>
-      <span class="sidebar-brand-name">repo-sight</span>
+      <div class="dash-actions">
+        <a href="/" class="btn-ghost">Analyze another repo</a>
+        <button class="btn-primary" id="rerun-btn">Re-run analysis</button>
+      </div>
     </div>
-
-    <div class="sidebar-section-label">Scan</div>
-    <button class="nav-item active" data-tab="overview">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
-        <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
-      </svg>
-      <span>Overview</span>
-    </button>
-    <button class="nav-item" data-tab="hotspots">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2c1 4-3 5-3 9a5 5 0 0010 0c0-2-1-3-2-4 0 2-1 3-2 2 1-3-1-5-3-7z" />
-      </svg>
-      <span>Hotspots</span>
-      <span class="nav-item-count" id="nav-count-hotspots"></span>
-    </button>
-    <button class="nav-item" data-tab="violations">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M8 6l-2-2M16 6l2-2M12 7v2M9 9h6a3 3 0 013 3v3a6 6 0 01-12 0v-3a3 3 0 013-3z" />
-        <path d="M3 12h3M18 12h3M4 17l3-1M20 17l-3-1" />
-      </svg>
-      <span>Violations</span>
-      <span class="nav-item-count" id="nav-count-violations"></span>
-    </button>
-    <button class="nav-item" data-tab="dependencies">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 15l6-6" /><path d="M13 5h4a4 4 0 010 8h-2" /><path d="M11 19H7a4 4 0 010-8h2" />
-      </svg>
-      <span>Dependencies</span>
-    </button>
-    <button class="nav-item" data-tab="files">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M6 2h9l5 5v15H6z" /><path d="M15 2v5h5" />
-      </svg>
-      <span>Files</span>
-      <span class="nav-item-count" id="nav-count-files"></span>
-    </button>
-
-    <div class="sidebar-footer">
-      <div class="sidebar-footer-project" id="sidebar-project">—</div>
-      <div class="sidebar-footer-scan" id="sidebar-scan"></div>
-    </div>
-  </aside>
+  </header>
 
   <!-- Main -->
   <main>
@@ -296,176 +263,124 @@ TODO Comments          : <span class="t-value">9</span>
     <section id="report-content" class="hidden">
       <div class="page-header">
         <div>
-          <h1 id="page-title">Overview</h1>
+          <h1>Overview</h1>
           <p id="page-subtitle">— files · — lines analyzed</p>
         </div>
-        <button class="btn-primary" id="rerun-btn">Re-run analysis</button>
       </div>
 
-      <!-- Overview panel -->
-      <div class="tab-panel active" id="overview-panel">
-        <div class="overview-top">
-          <div class="health-card">
-            <div class="health-gauge">
-              <svg width="140" height="140" viewBox="0 0 140 140">
-                <circle class="health-gauge-track" cx="70" cy="70" r="54" />
-                <circle class="health-gauge-fill" id="gauge-fill" cx="70" cy="70" r="54" />
-              </svg>
-              <div class="health-gauge-label">
-                <div class="health-gauge-score" id="health-score-value">—</div>
-                <div class="health-gauge-grade" id="health-grade">GRADE —</div>
-              </div>
-            </div>
-            <div>
-              <div class="health-meta-label">Code Health</div>
-              <div class="health-meta-desc">
-                Weighted from complexity density, avg function length, comment ratio, TODO density, and nesting depth.
-              </div>
-              <div class="severity-counts">
-
-                <div>
-                  <div class="severity-count-value" id="count-warning" style="color: var(--warning)">0</div>
-                  <div class="severity-count-label">warning</div>
-                </div>
-                <div>
-                  <div class="severity-count-value" id="count-info" style="color: var(--info)">0</div>
-                  <div class="severity-count-label">info</div>
-                </div>
-              </div>
+      <div class="overview-top">
+        <div class="health-card">
+          <div class="health-gauge">
+            <svg width="140" height="140" viewBox="0 0 140 140">
+              <circle class="health-gauge-track" cx="70" cy="70" r="54" />
+              <circle class="health-gauge-fill" id="gauge-fill" cx="70" cy="70" r="54" />
+            </svg>
+            <div class="health-gauge-label">
+              <div class="health-gauge-score" id="health-score-value">—</div>
+              <div class="health-gauge-grade" id="health-grade">GRADE —</div>
             </div>
           </div>
-
-          <div class="stat-grid">
-            <div class="stat-card">
-              <div class="stat-card-head">
-                <span class="stat-card-label">Functions</span>
-                <div class="icon-chip"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg></div>
-              </div>
-              <div class="stat-card-value" id="function-count">—</div>
+          <div>
+            <div class="health-meta-label">Code Health</div>
+            <div class="health-meta-desc">
+              Weighted from complexity density, avg function length, comment ratio, TODO density, and nesting depth.
             </div>
-            <div class="stat-card">
-              <div class="stat-card-head">
-                <span class="stat-card-label">Cyclomatic</span>
-                <div class="icon-chip amber"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6"><path d="M13 2L4 14h6l-1 8 9-12h-6z" /></svg></div>
+            <div class="severity-counts">
+              <div>
+                <div class="severity-count-value" id="count-warning" style="color: var(--warning)">0</div>
+                <div class="severity-count-label">warning</div>
               </div>
-              <div class="stat-card-value" id="complexity-count">—</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-card-head">
-                <span class="stat-card-label">TODOs</span>
-                <div class="icon-chip brick"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6"><path d="M12 3l9 16H3z" /><path d="M12 10v4" /><path d="M12 17h.01" /></svg></div>
+              <div>
+                <div class="severity-count-value" id="count-info" style="color: var(--info)">0</div>
+                <div class="severity-count-label">info</div>
               </div>
-              <div class="stat-card-value" id="todo-count">—</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-card-head">
-                <span class="stat-card-label">Max Nesting</span>
-                <div class="icon-chip"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg></div>
-              </div>
-              <div class="stat-card-value" id="nesting-depth">—</div>
             </div>
           </div>
         </div>
 
-        <div class="tear-rule" role="presentation"></div>
-
-        <div class="panel" id="longest-fn-panel">
-          <div class="panel-head">Longest function</div>
-          <div class="panel-body">
-            <span class="longest-fn-name" id="longest-fn-name">—</span>
-            <span class="longest-fn-lines" id="longest-fn-lines"></span>
-            <div class="progress-track">
-              <div class="progress-fill" id="longest-fn-bar" style="width: 0%"></div>
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-card-head">
+              <span class="stat-card-label">Functions</span>
+              <div class="icon-chip"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg></div>
             </div>
-            <div class="progress-caption">flagged at 100 lines (long-function rule)</div>
+            <div class="stat-card-value" id="function-count">—</div>
           </div>
-        </div>
-
-        <div class="streak-strip">
-          <span id="streak-message">Start analyzing to build your streak!</span>
-          <span id="streak-visual"></span>
-        </div>
-      </div>
-
-      <!-- Hotspots panel -->
-      <div class="tab-panel" id="hotspots-panel-wrap">
-        <div class="panel">
-          <div class="table-scroll">
-          <table id="hotspots-table">
-            <thead>
-              <tr><th>File</th><th>Complexity</th><th>Commits</th><th>Score</th><th>Formula</th></tr>
-            </thead>
-            <tbody></tbody>
-          </table>
+          <div class="stat-card">
+            <div class="stat-card-head">
+              <span class="stat-card-label">Cyclomatic</span>
+              <div class="icon-chip amber"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6"><path d="M13 2L4 14h6l-1 8 9-12h-6z" /></svg></div>
+            </div>
+            <div class="stat-card-value" id="complexity-count">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-head">
+              <span class="stat-card-label">TODOs</span>
+              <div class="icon-chip brick"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6"><path d="M12 3l9 16H3z" /><path d="M12 10v4" /><path d="M12 17h.01" /></svg></div>
+            </div>
+            <div class="stat-card-value" id="todo-count">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-head">
+              <span class="stat-card-label">Max Nesting</span>
+              <div class="icon-chip"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg></div>
+            </div>
+            <div class="stat-card-value" id="nesting-depth">—</div>
           </div>
         </div>
       </div>
 
-      <!-- Violations panel -->
-      <div class="tab-panel" id="violations-panel-wrap">
-        <div class="filter-bar">
-          <div class="search-wrap">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
-            <input type="text" id="violation-search" placeholder="Search by file or rule..." />
-          </div>
-          <button class="filter-btn active" data-severity="all">All</button>
-          <button class="filter-btn" data-severity="warning">Warning</button>
-          <button class="filter-btn" data-severity="info">Info</button>
-          <select class="filter-select" id="filter-language">
-            <option value="all">All languages</option>
-            <option value="cpp">C++</option>
-            <option value="python">Python</option>
-            <option value="java">Java</option>
-          </select>
-        </div>
-        <div class="panel">
-              <div class="table-scroll">
-          <table id="violations-table">
-            <thead>
-              <tr><th>Severity</th><th>Rule</th><th>File</th><th>Line</th><th>Message</th></tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-              </div>
-        </div>
-      </div>
+      <div class="tear-rule" role="presentation"></div>
 
-      <!-- Dependencies panel -->
-      <div class="tab-panel" id="dependencies-panel-wrap">
-        <div class="panel">
-          <div class="table-scroll">
-          <table id="deps-table">
-            <thead>
-              <tr><th>File</th><th>Fan-out</th><th>Fan-in</th><th>Depends on</th><th>Depended on by</th></tr>
-            </thead>
-            <tbody></tbody>
-          </table>
+      <!-- Size/structure/complexity detail -- same project-level fields the
+           engine already returns, just not previously surfaced anywhere
+           in the Overview panel. -->
+      <div class="metric-panel-grid">
+        <div class="panel metric-panel">
+          <div class="panel-head">Size &amp; shape</div>
+          <div class="metric-row">
+            <div class="metric-item"><span class="metric-value" id="m-total-lines">—</span><span class="metric-label">Total lines</span></div>
+            <div class="metric-item"><span class="metric-value" id="m-code-lines">—</span><span class="metric-label">Code lines</span></div>
+            <div class="metric-item"><span class="metric-value" id="m-comment-lines">—</span><span class="metric-label">Comment lines</span></div>
+            <div class="metric-item"><span class="metric-value" id="m-blank-lines">—</span><span class="metric-label">Blank lines</span></div>
+          </div>
+        </div>
+        <div class="panel metric-panel">
+          <div class="panel-head">Structure</div>
+          <div class="metric-row">
+            <div class="metric-item"><span class="metric-value" id="m-class-count">—</span><span class="metric-label">Classes</span></div>
+            <div class="metric-item"><span class="metric-value" id="m-variable-count">—</span><span class="metric-label">Variables</span></div>
+            <div class="metric-item"><span class="metric-value" id="m-include-count">—</span><span class="metric-label">Includes / imports</span></div>
+          </div>
+        </div>
+        <div class="panel metric-panel">
+          <div class="panel-head">Complexity detail</div>
+          <div class="metric-row">
+            <div class="metric-item"><span class="metric-value" id="m-loop-count">—</span><span class="metric-label">Loops</span></div>
+            <div class="metric-item"><span class="metric-value" id="m-condition-count">—</span><span class="metric-label">Conditions</span></div>
+            <div class="metric-item"><span class="metric-value" id="m-trycatch-count">—</span><span class="metric-label">Try/catch blocks</span></div>
           </div>
         </div>
       </div>
 
-      <!-- Files panel -->
-      <div class="tab-panel" id="files-panel-wrap">
-        <div class="search-wrap" style="max-width: 360px; margin-bottom: 16px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
-          <input type="text" id="file-search" placeholder="Search files..." />
+      <div class="panel" id="longest-fn-panel">
+        <div class="panel-head">Longest function</div>
+        <div class="panel-body">
+          <span class="longest-fn-name" id="longest-fn-name">—</span>
+          <span class="longest-fn-lines" id="longest-fn-lines"></span>
+          <div class="progress-track">
+            <div class="progress-fill" id="longest-fn-bar" style="width: 0%"></div>
+          </div>
+          <div class="progress-caption">flagged at 100 lines (long-function rule)</div>
         </div>
-        <div class="panel">
-          <div class="table-scroll">
-          <table id="files-table">
-            <thead>
-              <tr><th>File</th><th>Lines</th><th>Functions</th><th>Classes</th><th>Complexity</th><th>TODOs</th></tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-            </div>
-        </div>
+      </div>
+
+      <div class="streak-strip">
+        <span id="streak-message">Start analyzing to build your streak!</span>
+        <span id="streak-visual"></span>
       </div>
     </section>
   </main>
-
-  <!-- File detail slide-over (populated by JS) -->
-  <div id="detail-root"></div>
 
   <script src="dashboard.js"></script>
 </body>
