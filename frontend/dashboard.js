@@ -1,9 +1,9 @@
 /* ==========================================================================
    repo-sight dashboard — client-side logic
    Reads ?scan=<id> from the URL and polls GET /api/scans/:id until the
-   scan is COMPLETED/FAILED, then renders { project, files, hotspots,
-   violations }. With no ?scan= param it renders the "start a new scan"
-   form, which POSTs to /api/analyze and redirects to ?scan=<id>.
+   scan is COMPLETED/FAILED, then renders the Overview report from
+   { project, violations }. With no ?scan= param it renders the "start a
+   new scan" form, which POSTs to /api/analyze and redirects to ?scan=<id>.
    ========================================================================== */
 
 const GRADE_COLOR = { A: '#1f6f5c', B: '#1f6f5c', C: '#b8791f', D: '#b8791f', F: '#a8402a' };
@@ -11,28 +11,10 @@ const GAUGE_RADIUS = 54;
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS;
 const LONG_FUNCTION_THRESHOLD = 100; // matches cpp/py/java-long-*-function rule
 
-const PANEL_ID = {
-    overview: 'overview-panel',
-    hotspots: 'hotspots-panel-wrap',
-    violations: 'violations-panel-wrap',
-    dependencies: 'dependencies-panel-wrap',
-    files: 'files-panel-wrap',
-};
-
-const PAGE_TITLE = {
-    overview: 'Overview',
-    hotspots: 'Hotspots',
-    violations: 'Violations',
-    dependencies: 'Dependencies',
-    files: 'Files',
-};
-
 class RepoSightDashboard {
     constructor() {
         this.jsonData = null;
         this.meta = { projectName: '', scanId: '', createdAt: '' };
-        this.activeTab = 'overview';
-        this.violationFilters = { severity: 'all', language: 'all', search: '' };
         this.lastAnalysisDate = localStorage.getItem('rs-last-analysis');
         this.analysisStreak = parseInt(localStorage.getItem('rs-streak') || '0', 10);
 
@@ -71,80 +53,15 @@ class RepoSightDashboard {
         return Number(num || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     }
 
-    shortenPath(path) {
-        if (!path) return '';
-        if (path.length <= 34) return path;
-        return '\u2026' + path.slice(-34);
-    }
-
-    truncate(str, len) {
-        if (!str) return '';
-        return str.length > len ? str.slice(0, len - 1) + '\u2026' : str;
-    }
-
     /* -----------------------------------------------------------------
-       Static event bindings (nav, rerun, filters, search) -- these
-       elements exist in index.html from page load, unlike the report
-       tables/panels which only get their listeners once data renders.
+       Static event bindings -- just the rerun button now that there's
+       one view and no filter bars.
        ----------------------------------------------------------------- */
     bindStaticEvents() {
-        // Sidebar nav -- was previously wired to a ".tab-btn" class that
-        // doesn't exist in the markup (nav items use ".nav-item"), so
-        // every click on Hotspots/Violations/Dependencies/Files silently
-        // did nothing and only Overview was ever reachable.
-        document.querySelectorAll('.nav-item[data-tab]').forEach(btn => {
-            btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
-        });
-
         const rerunBtn = this.$('rerun-btn');
         if (rerunBtn) {
             rerunBtn.addEventListener('click', () => window.location.reload());
         }
-
-        document.querySelectorAll('.filter-btn[data-severity]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.filter-btn[data-severity]').forEach(b =>
-                    b.classList.toggle('active', b === btn)
-                );
-                this.violationFilters.severity = btn.dataset.severity;
-                this.renderViolations();
-            });
-        });
-
-        const langSelect = this.$('filter-language');
-        if (langSelect) {
-            langSelect.addEventListener('change', e => {
-                this.violationFilters.language = e.target.value;
-                this.renderViolations();
-            });
-        }
-
-        const violationSearch = this.$('violation-search');
-        if (violationSearch) {
-            violationSearch.addEventListener('input', e => {
-                this.violationFilters.search = e.target.value.toLowerCase();
-                this.renderViolations();
-            });
-        }
-
-        const fileSearch = this.$('file-search');
-        if (fileSearch) {
-            fileSearch.addEventListener('input', e => this.filterFiles(e.target.value));
-        }
-    }
-
-    switchTab(tabName) {
-        if (!tabName || !PANEL_ID[tabName]) return;
-        this.activeTab = tabName;
-
-        document.querySelectorAll('.nav-item[data-tab]').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.tab === tabName);
-        });
-        document.querySelectorAll('.tab-panel').forEach(panel => {
-            panel.classList.toggle('active', panel.id === PANEL_ID[tabName]);
-        });
-
-        this.setText('page-title', PAGE_TITLE[tabName] || tabName);
     }
 
     /* -----------------------------------------------------------------
@@ -209,8 +126,6 @@ class RepoSightDashboard {
                     this.meta.createdAt = data.createdAt || '';
                     this.jsonData = {
                         project: data.project || {},
-                        files: data.files || [],
-                        hotspots: data.hotspots || { gitAvailable: false, topFiles: [] },
                         violations: data.violations || [],
                     };
                     this.hideLoadingState();
@@ -236,16 +151,13 @@ class RepoSightDashboard {
        Landing page (no ?scan= in the URL) -- the marketing homepage is
        static markup already sitting in index.html as #landing-page, so
        this just swaps it in for the dashboard shell and wires the hero
-       form's submit handler. (Previously this built the form via an
-       innerHTML template dropped into #loading-state, which also meant
-       the full sidebar + empty dashboard nav rendered behind a bare
-       "Analyze a GitHub repository" prompt -- not a real homepage.)
+       form's submit handler.
        ----------------------------------------------------------------- */
     renderLandingPage() {
         document.body.classList.add('landing-mode');
 
-        const sidebar = document.querySelector('.sidebar');
-        if (sidebar) sidebar.classList.add('hidden');
+        const topbar = document.querySelector('.dash-topbar');
+        if (topbar) topbar.classList.add('hidden');
 
         const dashboardMain = document.querySelector('body > main');
         if (dashboardMain) dashboardMain.classList.add('hidden');
@@ -300,7 +212,7 @@ class RepoSightDashboard {
         if (reportContent) reportContent.classList.add('hidden');
         this.setText('loading-message', 'Starting analysis\u2026');
         this.setText('loading-progress', '');
-        this.setText('loading-tip', 'Tip: hotspot score = complexity \u00d7 commit churn \u2014 the files most worth reviewing first.');
+        this.setText('loading-tip', 'Tip: analysis runs against the repository\u2019s default branch (main or master).');
     }
 
     updateLoadingProgress(pct) {
@@ -334,37 +246,27 @@ class RepoSightDashboard {
     }
 
     /* -----------------------------------------------------------------
-       Report rendering
+       Report rendering -- Overview only.
        ----------------------------------------------------------------- */
     populateReport() {
         if (!this.jsonData) return;
 
         this.populateOverview(this.jsonData.project || {});
-        this.renderHotspots();
-        this.renderViolations();
-        this.renderDependencies();
-        this.renderFiles();
-        this.updateSidebarMeta();
+        this.updateTopbarMeta();
         this.updateStreak();
     }
 
-    updateSidebarMeta() {
+    updateTopbarMeta() {
         const project = this.jsonData.project || {};
         if (this.meta.projectName) {
             document.title = `${this.meta.projectName} \u2014 REPO-SIGHT`;
         }
-        this.setText('sidebar-project', this.meta.projectName || '\u2014');
-        this.setText('sidebar-scan', this.meta.scanId ? `scan ${this.meta.scanId.slice(0, 8)}` : '');
+        this.setText('dash-project', this.meta.projectName || '\u2014');
+        this.setText('dash-scan', this.meta.scanId ? `scan ${this.meta.scanId.slice(0, 8)}` : '');
         this.setText(
             'page-subtitle',
             `${this.formatNumber(project.filesAnalyzed)} files \u00b7 ${this.formatNumber(project.totalLines)} lines analyzed`
         );
-
-        const violations = this.jsonData.violations || [];
-        const hotspots = this.jsonData.hotspots || {};
-        this.setText('nav-count-hotspots', hotspots.gitAvailable ? (hotspots.topFiles || []).length : '');
-        this.setText('nav-count-violations', violations.length || '');
-        this.setText('nav-count-files', (this.jsonData.files || []).length || '');
     }
 
     populateOverview(project) {
@@ -377,7 +279,7 @@ class RepoSightDashboard {
 
         const violations = this.jsonData.violations || [];
         const bySeverity = sev => violations.filter(v => v.severity === sev).length;
-     
+
         this.setText('count-warning', bySeverity('warning'));
         this.setText('count-info', bySeverity('info'));
 
@@ -385,6 +287,22 @@ class RepoSightDashboard {
         this.setText('complexity-count', project.cyclomaticComplexity || 0);
         this.setText('todo-count', project.todoCount || 0);
         this.setText('nesting-depth', project.maxNestingDepth || 0);
+
+        // Size & shape
+        this.setText('m-total-lines', this.formatNumber(project.totalLines || 0));
+        this.setText('m-code-lines', this.formatNumber(project.codeLines || 0));
+        this.setText('m-comment-lines', this.formatNumber(project.commentLines || 0));
+        this.setText('m-blank-lines', this.formatNumber(project.blankLines || 0));
+
+        // Structure
+        this.setText('m-class-count', this.formatNumber(project.classCount || 0));
+        this.setText('m-variable-count', this.formatNumber(project.variableCount || 0));
+        this.setText('m-include-count', this.formatNumber(project.includeCount || 0));
+
+        // Complexity detail
+        this.setText('m-loop-count', this.formatNumber(project.loopCount || 0));
+        this.setText('m-condition-count', this.formatNumber(project.conditionCount || 0));
+        this.setText('m-trycatch-count', this.formatNumber(project.tryCatchCount || 0));
 
         const longestName = project.longestFunctionName || '\u2014';
         const longestLines = project.longestFunctionLines || 0;
@@ -404,242 +322,6 @@ class RepoSightDashboard {
         fill.style.strokeDasharray = `${GAUGE_CIRCUMFERENCE}`;
         fill.style.strokeDashoffset = `${GAUGE_CIRCUMFERENCE * (1 - pct)}`;
         fill.style.stroke = GRADE_COLOR[grade] || GRADE_COLOR.F;
-    }
-
-    renderHotspots() {
-        const hotspots = this.jsonData.hotspots || {};
-        const wrap = this.$('hotspots-panel-wrap');
-        const table = this.$('hotspots-table');
-
-        if (!hotspots.gitAvailable) {
-            if (table) table.classList.add('hidden');
-            this.renderEmptyState(
-                wrap,
-                'No git history available',
-                'This scan\u2019s source was fetched as a tarball snapshot with no git history, so hotspot scoring (complexity \u00d7 commit churn) has nothing to rank against.'
-            );
-            return;
-        }
-
-        const files = hotspots.topFiles || [];
-        if (files.length === 0) {
-            if (table) table.classList.add('hidden');
-            this.renderEmptyState(wrap, 'No hotspot data', 'No files had both complexity and commit history to score.');
-            return;
-        }
-        if (table) table.classList.remove('hidden');
-        this.clearEmptyState(wrap);
-
-        const tbody = document.querySelector('#hotspots-table tbody');
-        if (!tbody) return;
-        tbody.innerHTML = '';
-
-        const maxComplexity = Math.max(1, ...files.map(f => f.cyclomaticComplexity || 0));
-        const maxCommits = Math.max(1, ...files.map(f => f.commitCount || 0));
-
-        files.forEach(h => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${this.escapeHtml(this.shortenPath(h.path))}</td>
-                <td>${h.cyclomaticComplexity}</td>
-                <td>${h.commitCount}</td>
-                <td>${(h.hotspotScore || 0).toFixed(1)}</td>
-                <td>(${h.cyclomaticComplexity}/${maxComplexity}) \u00d7 (${h.commitCount}/${maxCommits}) \u00d7 100</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-
-    renderViolations() {
-        if (!this.jsonData) return;
-        const all = this.jsonData.violations || [];
-        const { severity, language, search } = this.violationFilters;
-
-        const filtered = all
-            .filter(v => severity === 'all' || v.severity === severity)
-            .filter(v => language === 'all' || v.language === language)
-            .filter(v => {
-                if (!search) return true;
-                return (
-                    (v.path || '').toLowerCase().includes(search) ||
-                    (v.ruleId || '').toLowerCase().includes(search) ||
-                    (v.message || '').toLowerCase().includes(search)
-                );
-            });
-
-        const tbody = document.querySelector('#violations-table tbody');
-        if (!tbody) return;
-        tbody.innerHTML = '';
-
-        if (filtered.length === 0) {
-            const msg = all.length === 0 ? 'No violations detected.' : 'No violations match the current filters.';
-            tbody.innerHTML = `<tr class="no-data"><td colspan="5">${this.escapeHtml(msg)}</td></tr>`;
-            return;
-        }
-
-        filtered.forEach(v => {
-            const tr = document.createElement('tr');
-            const safeMessage = this.escapeHtml(v.message || '');
-            const sev = this.escapeHtml(v.severity || '');
-            tr.innerHTML = `
-                <td><span class="severity-pill severity-${sev}">${sev}</span></td>
-                <td><code>${this.escapeHtml(v.ruleId)}</code><span class="lang-tag">${this.escapeHtml(v.language)}</span></td>
-                <td>${this.escapeHtml(this.shortenPath(v.path))}</td>
-                <td>${v.line}</td>
-                <td title="${safeMessage}">${this.escapeHtml(this.truncate(v.message || '', 70))}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-
-    renderDependencies() {
-        const files = this.jsonData.files || [];
-        const wrap = this.$('dependencies-panel-wrap');
-        const table = this.$('deps-table');
-        const hasDeps = files.some(f => f.dependencies && (f.dependencies.fanOut > 0 || f.dependencies.fanIn > 0));
-
-        if (!hasDeps) {
-            if (table) table.classList.add('hidden');
-            this.renderEmptyState(
-                wrap,
-                'No dependencies detected',
-                'Dependencies show up when scanned files #include/import other files in the same project.'
-            );
-            return;
-        }
-        if (table) table.classList.remove('hidden');
-        this.clearEmptyState(wrap);
-
-        const tbody = document.querySelector('#deps-table tbody');
-        if (!tbody) return;
-        tbody.innerHTML = '';
-
-        files.forEach(f => {
-            if (!f.dependencies) return;
-            const deps = f.dependencies;
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${this.escapeHtml(this.shortenPath(f.path))}</td>
-                <td>${deps.fanOut || 0}</td>
-                <td>${deps.fanIn || 0}</td>
-                <td>${this.escapeHtml((deps.dependsOn || []).join(', '))}</td>
-                <td>${this.escapeHtml((deps.dependedOnBy || []).join(', '))}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-
-    renderFiles() {
-        const files = this.jsonData.files || [];
-        this._allFiles = files;
-
-        const tbody = document.querySelector('#files-table tbody');
-        if (!tbody) return;
-
-        if (files.length === 0) {
-            tbody.innerHTML = `<tr class="no-data"><td colspan="6">No files analyzed.</td></tr>`;
-            return;
-        }
-
-        tbody.innerHTML = '';
-        files.forEach(f => {
-            const tr = document.createElement('tr');
-            tr.style.cursor = 'pointer';
-            tr.innerHTML = `
-                <td>${this.escapeHtml(this.shortenPath(f.path))}</td>
-                <td>${this.formatNumber(f.totalLines || 0)}</td>
-                <td>${f.functionCount || 0}</td>
-                <td>${f.classCount || 0}</td>
-                <td>${f.cyclomaticComplexity || 0}</td>
-                <td>${f.todoCount || 0}</td>
-            `;
-            tr.addEventListener('click', () => this.showFileDetails(f));
-            tbody.appendChild(tr);
-        });
-    }
-
-    renderEmptyState(panelWrap, title, body) {
-        if (!panelWrap) return;
-        let el = panelWrap.querySelector('.panel-empty-state');
-        if (!el) {
-            el = document.createElement('div');
-            el.className = 'panel panel-empty-state empty-state';
-            panelWrap.appendChild(el);
-        }
-        el.innerHTML = `<p>${this.escapeHtml(title)}</p><p class="hint">${this.escapeHtml(body)}</p>`;
-        el.classList.remove('hidden');
-    }
-
-    clearEmptyState(panelWrap) {
-        if (!panelWrap) return;
-        const el = panelWrap.querySelector('.panel-empty-state');
-        if (el) el.classList.add('hidden');
-    }
-
-    /* -----------------------------------------------------------------
-       File search (Files tab)
-       ----------------------------------------------------------------- */
-    filterFiles(searchTerm) {
-        const tbody = document.querySelector('#files-table tbody');
-        if (!tbody) return;
-        const term = searchTerm.toLowerCase();
-        Array.from(tbody.getElementsByTagName('tr')).forEach(row => {
-            const fileName = row.cells[0]?.textContent || '';
-            row.style.display = fileName.toLowerCase().includes(term) ? '' : 'none';
-        });
-    }
-
-    /* -----------------------------------------------------------------
-       File detail slide-over
-       ----------------------------------------------------------------- */
-    showFileDetails(f) {
-        this.closeFileDetails();
-
-        const overlay = document.createElement('div');
-        overlay.className = 'detail-overlay';
-        overlay.addEventListener('click', () => this.closeFileDetails());
-
-        const rows = [
-            ['Total lines', this.formatNumber(f.totalLines || 0)],
-            ['Blank lines', this.formatNumber(f.blankLines || 0)],
-            ['Comment lines', this.formatNumber(f.commentLines || 0)],
-            ['Code lines', this.formatNumber(f.codeLines || 0)],
-            ['Functions', f.functionCount || 0],
-            ['Classes', f.classCount || 0],
-            ['Variables', f.variableCount || 0],
-            ['Loops', f.loopCount || 0],
-            ['Conditions', f.conditionCount || 0],
-            ['Try/catch', f.tryCatchCount || 0],
-            ['Max nesting', f.maxNestingDepth || 0],
-            ['Cyclomatic complexity', f.cyclomaticComplexity || 0],
-            ['TODOs', f.todoCount || 0],
-        ];
-
-        const panel = document.createElement('div');
-        panel.className = 'detail-panel';
-        panel.innerHTML = `
-            <div class="detail-panel-head">
-                <div class="detail-panel-title">${this.escapeHtml(f.path)}</div>
-                <button class="detail-close" aria-label="Close">&times;</button>
-            </div>
-            ${rows
-                .map(
-                    ([label, value]) =>
-                        `<div class="detail-row"><span class="detail-row-label">${this.escapeHtml(label)}</span><span class="detail-row-value">${this.escapeHtml(value)}</span></div>`
-                )
-                .join('')}
-        `;
-        panel.querySelector('.detail-close').addEventListener('click', () => this.closeFileDetails());
-
-        const root = this.$('detail-root');
-        if (!root) return;
-        root.appendChild(overlay);
-        root.appendChild(panel);
-    }
-
-    closeFileDetails() {
-        const root = this.$('detail-root');
-        if (root) root.innerHTML = '';
     }
 
     /* -----------------------------------------------------------------
