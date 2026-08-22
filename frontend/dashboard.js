@@ -17,6 +17,8 @@ class RepoSightDashboard {
         this.meta = { projectName: '', scanId: '', createdAt: '' };
         this.lastAnalysisDate = localStorage.getItem('rs-last-analysis');
         this.analysisStreak = parseInt(localStorage.getItem('rs-streak') || '0', 10);
+        this.feedbackRating = 0;
+        this.feedbackSubmitting = false;
 
         this.init();
     }
@@ -54,13 +56,97 @@ class RepoSightDashboard {
     }
 
     /* -----------------------------------------------------------------
-       Static event bindings -- just the rerun button now that there's
-       one view and no filter bars.
+       Static event bindings -- the rerun button and the feedback widget.
+       Both live in markup that's present regardless of scan state, so
+       binding happens once up front rather than after the report loads.
        ----------------------------------------------------------------- */
     bindStaticEvents() {
         const rerunBtn = this.$('rerun-btn');
         if (rerunBtn) {
             rerunBtn.addEventListener('click', () => window.location.reload());
+        }
+        this.bindFeedbackWidget();
+    }
+
+    /* -----------------------------------------------------------------
+       Feedback widget -- star rating (1-5) + optional comment, shown on
+       the report page. Submits to POST /api/feedback and remembers (via
+       localStorage, keyed by scanId) that this scan was already rated so
+       a page refresh doesn't ask twice.
+       ----------------------------------------------------------------- */
+    bindFeedbackWidget() {
+        const stars = Array.from(document.querySelectorAll('#feedback-stars .feedback-star'));
+        const submitBtn = this.$('feedback-submit');
+        const messageEl = this.$('feedback-message');
+        const statusEl = this.$('feedback-status');
+        const honeypotEl = this.$('feedback-company');
+        if (!stars.length || !submitBtn || !messageEl || !statusEl) return;
+
+        stars.forEach(star => {
+            star.addEventListener('click', () => {
+                this.feedbackRating = parseInt(star.dataset.value, 10) || 0;
+                stars.forEach(s => {
+                    const active = (parseInt(s.dataset.value, 10) || 0) <= this.feedbackRating;
+                    s.classList.toggle('is-active', active);
+                    s.setAttribute('aria-checked', active ? 'true' : 'false');
+                });
+                submitBtn.disabled = this.feedbackRating < 1;
+            });
+        });
+
+        submitBtn.addEventListener('click', () => this.submitFeedback({ submitBtn, messageEl, statusEl, honeypotEl }));
+    }
+
+    async submitFeedback({ submitBtn, messageEl, statusEl, honeypotEl }) {
+        if (!this.feedbackRating || this.feedbackSubmitting) return;
+
+        this.feedbackSubmitting = true;
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Sending\u2026';
+        statusEl.textContent = '';
+        statusEl.classList.remove('is-error', 'is-success');
+
+        try {
+            const res = await fetch('/api/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    rating: this.feedbackRating,
+                    message: messageEl.value.trim(),
+                    scanId: this.meta.scanId || '',
+                    projectName: this.meta.projectName || '',
+                    company: honeypotEl ? honeypotEl.value : '',
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+            if (this.meta.scanId) {
+                localStorage.setItem(`rs-feedback-${this.meta.scanId}`, '1');
+            }
+            this.showFeedbackThanks();
+        } catch (err) {
+            statusEl.textContent = err.message || 'Could not send feedback \u2014 try again.';
+            statusEl.classList.add('is-error');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Send feedback';
+            this.feedbackSubmitting = false;
+        }
+    }
+
+    showFeedbackThanks() {
+        const state = this.$('feedback-form-state');
+        if (state) {
+            state.innerHTML = '<p class="feedback-thanks">Thanks for the rating \u2014 it genuinely helps.</p>';
+        }
+    }
+
+    // Called once meta.scanId is known (see populateReport) so a returning
+    // visit to an already-rated scan shows the thank-you state instead of
+    // asking again.
+    maybeShowFeedbackAlready() {
+        if (this.meta.scanId && localStorage.getItem(`rs-feedback-${this.meta.scanId}`)) {
+            this.showFeedbackThanks();
         }
     }
 
@@ -254,6 +340,7 @@ class RepoSightDashboard {
         this.populateOverview(this.jsonData.project || {});
         this.updateTopbarMeta();
         this.updateStreak();
+        this.maybeShowFeedbackAlready();
     }
 
     updateTopbarMeta() {
